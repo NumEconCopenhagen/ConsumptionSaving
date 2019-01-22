@@ -17,4 +17,4 @@ The repository **[ConsumptionSavingNotebooks](https://github.com/NumEconCopenhag
 
 _The library is still early in its development, contributions are very welcome!_
 
-**New to Python?:** Why out this online course, [Introduction to programming and numerical analysis](https://numeconcopenhagen.netlify.com/).
+**New to Python?** Try out this online course, [Introduction to programming and numerical analysis](https://numeconcopenhagen.netlify.com/).
