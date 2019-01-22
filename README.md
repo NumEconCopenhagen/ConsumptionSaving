@@ -18,3 +18,22 @@ The repository **[ConsumptionSavingNotebooks](https://github.com/NumEconCopenhag
 _The library is still early in its development, contributions are very welcome!_
 
 **New to Python?** Try out this online course, [Introduction to programming and numerical analysis](https://numeconcopenhagen.netlify.com/).
+
+# Installation
+
+The package can be installed with
+
+```
+pip install git+https://github.com/NumEconCopenhagen/ConsumptionSaving
+```
+
+# Development
+
+To develop the package follow these steps:
+
+1. Install watchdog, `pip install watchdog`
+2. Clone this repository
+3. Locate the cloned repostiory in a terminal
+4. Run `python setyp.py watch`
+
+This re-installs the package whenever you make any changes. 
