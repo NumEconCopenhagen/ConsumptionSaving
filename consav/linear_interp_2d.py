@@ -172,9 +172,6 @@ def _interp_2d_only_last_vec(prep,grid1,grid2,value,xi1,xi2,yi,monotone,search):
     nom_1_left = grid1[j1+1]-xi1
     nom_1_right = xi1-grid1[j1]
 
-    nom_2_left = grid2[j2+1]-xi2
-    nom_2_right = xi2-grid2[j2]
-    
     denom = (grid1[j1+1]-grid1[j1])
     for k1 in range(2):
         nom_1 = nom_1_left if k1 == 0 else nom_1_right   

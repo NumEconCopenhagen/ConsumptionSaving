@@ -82,6 +82,11 @@ def log_normal_gauss_hermite(sigma, n):
 
     """
 
+    if sigma == 0.0 or n == 1:
+        x = np.ones(n)
+        w = np.ones(n)
+        return x,w
+
     # a. GaussHermite
     x,w = gauss_hermite(n)
 

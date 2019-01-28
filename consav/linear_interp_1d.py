@@ -112,9 +112,9 @@ def _interp_1d_vec_mon(prep,grid1,value,xi1,yi,monotone,search):
     Nyi = yi.size
     if search:
         for i in range(Nyi):
-            if 1 == 0 and monotone and i > 0:
+            if monotone and i > 0:
                 j1 = prep[i-1]
-                while xi1[i] >= grid1[j1+1] and j1 < grid1.size-1:
+                while xi1[i] >= grid1[j1+1] and j1 < grid1.size-2:
                     j1 += 1
                 prep[i] = j1
             else:
@@ -148,22 +148,6 @@ def interp_1d_vec_mon(prep,grid1,value,xi1,yi):
 
     _interp_1d_vec_mon(prep,grid1,value,xi1,yi,True,True)    
 
-@njit(void(double[:],double[:],double[:],double[:]),fastmath=True)
-def interp_1d_vec_mon_noprep(grid1,value,xi1,yi):
-    """ 1d interpolation for vector of points where xi1 is monotone
-        
-    Args:
-
-        grid1 (numpy.ndarray): 1d grid
-        value (numpy.ndarray): value array (1d)
-        xi1 (double): input point
-        yi (numpy.ndarray): output vector
-
-    """
-
-    prep = interp_1d_prep(yi.size)
-    _interp_1d_vec_mon(prep,grid1,value,xi1,yi,True,True)  
-
 @njit(void(int32[:],double[:],double[:],double[:],double[:]),fastmath=True)
 def interp_1d_vec_mon_rep(prep,grid1,value,xi1,yi):
     """ 1d interpolation for vector of points where xi1 is monotone and search is not needed
@@ -179,3 +163,19 @@ def interp_1d_vec_mon_rep(prep,grid1,value,xi1,yi):
     """
 
     _interp_1d_vec_mon(prep,grid1,value,xi1,yi,True,False)       
+
+@njit(void(double[:],double[:],double[:],double[:]),fastmath=True)
+def interp_1d_vec_mon_noprep(grid1,value,xi1,yi):
+    """ 1d interpolation for vector of points where xi1 is monotone
+        
+    Args:
+
+        grid1 (numpy.ndarray): 1d grid
+        value (numpy.ndarray): value array (1d)
+        xi1 (double): input point
+        yi (numpy.ndarray): output vector
+
+    """
+
+    prep = interp_1d_prep(yi.size)
+    _interp_1d_vec_mon(prep,grid1,value,xi1,yi,True,True)  

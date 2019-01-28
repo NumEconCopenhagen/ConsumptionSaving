@@ -16,5 +16,7 @@ scipy
 seaborn  
 sphinx
 sphinx_click
+urllib
 virtualenv==16.2.0
+zipfile
 watchdog

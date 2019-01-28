@@ -28,6 +28,7 @@ class ConsumptionSavingModel():
 
         self.name = None # name of parametrization
         self.solmethod = None # solution methods
+        self.compiler = None # compiler
         self.parlist = [] # list of parameters, (name,numba type)
         self.par = None # jitted class with fields as in parlist
         self.sollist = [] # list of parameters, (name,numba type)        
@@ -35,6 +36,9 @@ class ConsumptionSavingModel():
         self.simlist = [] # list of parameters, (name,numba type)        
         self.sim = None # jitted class with fields as in sollist        
         self.log = None # log text
+        self.vs_path = 'C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary/Build/'
+        self.intel_path = 'C:/Program Files (x86)/IntelSWTools/compilers_and_libraries_2018.5.274/windows/bin/'
+        self.intel_vs_version = 'vs2017'
 
     def create_subclasses(self,parlist,sollist,simlist):
         """ create jitted subclasses par, sol, sim
@@ -112,7 +116,7 @@ class ConsumptionSavingModel():
             for key in data.files:
                 setattr(self.sim,key,data[key])
 
-    def __str__(self): 
+    def __str__(self):
         """ called when model is printed """ 
         
         # a. keys and values in parlist
@@ -141,18 +145,20 @@ class ConsumptionSavingModel():
     ## interact with cpp ##
     #######################
     
-    def setup_cpp(self,compiler='vs'):
+    def setup_cpp(self,use_nlopt=False):
         """ setup interface to cpp files 
         
         Args:
 
             compiler (str,optional): compiler choice (vs or intel)
+            use_nlopt (bool,optional): use NLopt optimizer
 
         """
 
-        # a. compiler
-        self.compiler = compiler
-        
+        # a. setup NLopt
+        if not os.path.isfile(f'{os.getcwd()}/libnlopt-0.dll'):
+            cpptools.setup_nlopt(vs_path=self.vs_path)
+            
         # b. dictionary of cppfiles
         self.cppfiles = dict()
 
@@ -173,13 +179,22 @@ class ConsumptionSavingModel():
 
         """
 
+        use_openmp_with_vs = False
+
         if do_compile:
-            cpptools.compile('cppfuncs//' + filename,compiler=self.compiler,do_print=do_print)
+            cpptools.compile('cppfuncs//' + filename,
+                compiler=self.compiler,
+                vs_path=self.vs_path,
+                intel_path=self.intel_path, 
+                intel_vs_version=self.intel_vs_version, 
+                do_print=do_print)
 
         funcs = [(name,[ct.POINTER(self.parcpp),ct.POINTER(self.solcpp),ct.POINTER(self.simcpp)]) for name in funcnames]
-        funcs.append(('setup_omp',[]))
+        if self.compiler == 'vs': 
+            funcs.append(('setup_omp',[]))
+            use_openmp_with_vs = True
 
-        self.cppfiles[filename] = cpptools.link(filename,funcs,compiler=self.compiler)
+        self.cppfiles[filename] = cpptools.link(filename,funcs,use_openmp_with_vs=use_openmp_with_vs,do_print=do_print)
                 
     def delink_cpp(self,filename,do_print=False,do_remove=True):
         """ delink cpp library

@@ -15,14 +15,67 @@ type definitions from numba) is provided.
 """
 
 import os
+import zipfile
+import urllib.request
 import ctypes as ct
 import numpy as np
 from numba import int32, double, boolean
+
+import os, zipfile
+
+def setup_nlopt(vs_path = 'C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary/Build/'):
+
+    """download and setup nlopt
+
+    Args:
+
+        vs_path (str,optional): path to vs compiler
+
+    """
+
+    # a. download
+    url = 'http://ab-initio.mit.edu/nlopt/nlopt-2.4.2-dll64.zip'
+    nloptzip = f'{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64.zip'
+    urllib.request.urlretrieve(url, nloptzip)
+
+    # b. unzip
+    filename = os.path.abspath(f'{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64.zip') 
+    with zipfile.ZipFile(filename) as file:
+        file.extractall(f'{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64/')
+
+    # c. setup string
+    pwd_str = f'cd "{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64/"\n'    
+    path_str = f'cd "{vs_path}"\n'
+    version_str = 'call vcvarsall.bat x64\n'
+    setup_str = 'lib /def:libnlopt-0.def /machine:x64'
+    
+    # d. write .bat
+    lines = [path_str,version_str,pwd_str,setup_str]
+    with open('compile.bat', 'w') as txtfile:
+        txtfile.writelines(lines)
+
+    # e. call .bat
+    result = os.system('compile.bat')
+    if result == 0:
+        print('nlopt setup done')
+    else: 
+        raise ValueError('nlopt setup failed')
+    os.remove('compile.bat')
+
+    # f. copy
+    dst = f'{os.getcwd()}/libnlopt-0.dll'
+    if os.path.isfile(dst):
+        os.remove(dst)
+    os.rename(f'{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64/libnlopt-0.dll',dst)
+
+    # g. remove zip file
+    os.remove(nloptzip) 
 
 def compile(filename,compiler='vs',
             vs_path = 'C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary/Build/',
             intel_path = 'C:/Program Files (x86)/IntelSWTools/compilers_and_libraries_2018.5.274/windows/bin/',
             intel_vs_version = 'vs2017',
+            nlopt_lib = 'cppfuncs/nlopt-2.4.2-dll64/libnlopt-0.lib',
             dllfilename='',do_print=True):      
     """compile cpp file to dll
 
@@ -38,18 +91,29 @@ def compile(filename,compiler='vs',
 
     """
 
+    if os.path.isfile(nlopt_lib):
+        use_nlopt = True
+    else:
+        use_nlopt = False
+
     # a. compile string
     if compiler == 'vs':
         pwd_str = 'cd "' + os.getcwd() + '"\n'    
         path_str = f'cd "{vs_path}"\n'
         version_str = 'call vcvarsall.bat x64\n'
-        compile_str = f'cl /LD /EHsc /Ox /openmp {filename}.cpp\n'
+        if use_nlopt:
+            compile_str = f'cl {nlopt_lib} /LD /EHsc /Ox /openmp {filename}.cpp\n'
+        else:
+            compile_str = f'cl /LD /EHsc /Ox /openmp {filename}.cpp\n'
         lines = [path_str,version_str,pwd_str,compile_str]
     elif compiler == 'intel':
         pwd_str = 'cd "' + os.getcwd() + '"\n'            
         path_str = f'cd "{intel_path}"\n'
         version_str = f'call ipsxe-comp-vars.bat intel64 {intel_vs_version}\n'
-        compile_str = f'icl /LD /O3 /arch:CORE-AVX512 /openmp {filename}.cpp\n'
+        if use_nlopt:
+            compile_str = f'icl {nlopt_lib} /LD /O3 /arch:CORE-AVX512 /openmp {filename}.cpp\n'
+        else:
+            compile_str = f'icl /LD /O3 /arch:CORE-AVX512 /openmp {filename}.cpp\n'
         lines = [path_str,version_str,pwd_str,compile_str]
         
     # b. write .bat
@@ -96,17 +160,18 @@ def set_argtypes(cppfile,funcs):
         funcnow.restype = None
         funcnow.argtypes = argtypes
 
-def link(filename,funcs,compiler='',do_print=True): 
+def link(filename,funcs,use_openmp_with_vs=False,do_print=True): 
     """ link cpp library
         
     Args:
 
         filename (str): path to .dll file (no .dll extension!)
         funcs (list): list of functions with elements (functionname,[argtype1,argtype2,etc.])
-        compiler (str,optional): compiler choice (vs or intel)
+        use_openmp_with_vs (bool,optional): use openmp with vs as sompiler
         do_print (str,optional): print if successfull
 
     Return:
+    
         cppfile (ctypes.CDLL): c++ library (result of ct.cdll.LoadLibrary('cppfile.dll'))
     
     """
@@ -118,7 +183,7 @@ def link(filename,funcs,compiler='',do_print=True):
     
     # b. functions
     set_argtypes(cppfile,funcs)
-    if compiler == 'vs': # needed with openmp
+    if use_openmp_with_vs: # needed with openmp
         cppfile.setup_omp() # must exist
         delink(cppfile,filename,do_print=False,do_remove=False)
         cppfile = ct.cdll.LoadLibrary(filename)

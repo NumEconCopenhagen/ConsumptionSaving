@@ -91,7 +91,7 @@ def create(ufunc,use_inv_w=False):
             c_low  = c_vec[ia]
             c_high = c_vec[ia+1]
 
-            c_slope = (c_high-c_low)*(m_high-m_low)
+            c_slope = (c_high-c_low)/(m_high-m_low)
 
             # c. loop through common grid
             for im in range(Nm):
