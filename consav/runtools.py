@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""newton_raphson
+"""runtools
 
 This module provides misc run tools.
 """
@@ -11,7 +11,7 @@ def write_numba_config(disable=0,threads=1,threading_layer='omp'):
     Args:
         disable_jit (int): numba disabled if = 1.
         num_threads (int): number of threads used in numba
-        threading_layers (str): type of parallization, 'tbb' or 'omp'
+        threading_layers (str): type of parallization, 'omp' or 'tbb'
     
     """
 
