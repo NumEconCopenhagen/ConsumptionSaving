@@ -19,6 +19,8 @@ _The library is still early in its development, contributions are very welcome!_
 
 **New to Python?** Try out this online course, [Introduction to programming and numerical analysis](https://numeconcopenhagen.netlify.com/).
 
+**Interested in other numerical tools for economists in Python?** Try out [QuantEcon](https://lectures.quantecon.org/).
+
 # Installation
 
 The package can be installed with
