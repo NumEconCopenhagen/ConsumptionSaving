@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """cpptools
 
-This module provides a simplified interface for calling c++ functions in Python. 
+This module provides a simplified interface for calling C++ functions in Python. 
 
 The compile() function takes a .cpp as input, writes a .bat file, and run it 
 to compile a .dll file. The link() function loads the .dll file and defines 
 the required functions. The .dll can be unloaded with unlink().
 
-In the sub-section #struct# an interface for passing a Python class to a c++ struct 
-is included. The order of fields must be exactly the same in Python and c++. To 
+In the sub-section #struct# an interface for passing a Python class to a C++ struct 
+is included. The order of fields must be exactly the same in Python and Cc++. To 
 avoid errors a function writing the C++ struct from the Python class (with 
 type definitions from numba) is provided.
 
@@ -24,7 +24,6 @@ from numba import int32, double, boolean
 import os, zipfile
 
 def setup_nlopt(vs_path = 'C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary/Build/'):
-
     """download and setup nlopt
 
     Args:

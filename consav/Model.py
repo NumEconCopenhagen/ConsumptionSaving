@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""ConsumptionSavingModel
+"""Model
 
 This module provides a class for consumption-saving models with methods for saving and loading
 and interfacing with C++. 
@@ -15,13 +15,25 @@ from numba import jitclass, int32, double, boolean
 from . import cpptools
 
 # for save/load
+def _filename(model):    
+    if hasattr(model,'solmethod'):
+        return f'{model.name}_{model.solmethod}'
+    else:
+        return f'{model.name}'
+
 def _convert_to_dict(someclass,somelist):
 
-    keys = [var[0] for var in somelist]
+    if somelist is None:
+        return {}
+    elif len(somelist) > 0 and type(somelist[0]) is str:
+        keys = [var for var in somelist]
+    else:
+        keys = [var[0] for var in somelist]
     values = [getattr(someclass,key) for key in keys]
     return {key:val for key,val in zip(keys,values)}
 
-class ConsumptionSavingModel():
+# main
+class ModelClass():
     
     def __init__(self):
         """ defines default attributes """
@@ -39,6 +51,7 @@ class ConsumptionSavingModel():
         self.vs_path = 'C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary/Build/'
         self.intel_path = 'C:/Program Files (x86)/IntelSWTools/compilers_and_libraries_2018.5.274/windows/bin/'
         self.intel_vs_version = 'vs2017'
+        self.savelist = []
 
     def create_subclasses(self,parlist,sollist,simlist):
         """ create jitted subclasses par, sol, sim
@@ -78,43 +91,62 @@ class ConsumptionSavingModel():
 
         return ParClass(),SolClass(),SimClass()
 
+    def get_par_dict(self):
+        """ get dictionary for the par subclass """
+        
+        return _convert_to_dict(self.par,self.parlist)
+
     def save(self):
-        """ save the model parameters and solution and simulation variables """
+        """ save the model parameters, the solution simulation variables """
         
         if not os.path.exists('data'):
             os.makedirs('data')
 
         # a. save parameters pickle
         par_dict = _convert_to_dict(self.par,self.parlist)
-        with open(f'data/{self.name}_{self.solmethod}.p', 'wb') as f:
+        with open(f'data/{_filename(self)}_par.p', 'wb') as f:
             pickle.dump(par_dict, f)
 
         # b. solution
         sol_dict = _convert_to_dict(self.sol,self.sollist)
-        np.savez(f'data/{self.name}_{self.solmethod}_sol.npz', **sol_dict)
+        np.savez(f'data/{_filename(self)}_sol.npz', **sol_dict)
     
         # c. simulation
         sim_dict = _convert_to_dict(self.sim,self.simlist)
-        np.savez(f'data/{self.name}_{self.solmethod}_sim.npz', **sim_dict)
+        np.savez(f'data/{_filename(self)}_sim.npz', **sim_dict)
+
+        # d. additional
+        if hasattr(self,'savelist'):
+            addi_dict = _convert_to_dict(self,self.savelist + ['savelist'])
+            with open(f'data/{_filename(self)}.p', 'wb') as f:
+                pickle.dump(addi_dict, f)        
 
     def load(self):
         """ load the model parameters and solution and simulation variables"""
 
         # a. parameters
-        with open(f'data/{self.name}_{self.solmethod}.p', 'rb') as f:
+        with open(f'data/{_filename(self)}_par.p', 'rb') as f:
             self.par_dict = pickle.load(f)
         for key,val in self.par_dict.items():
             setattr(self.par,key,val)
 
         # b. solution
-        with np.load(f'data/{self.name}_{self.solmethod}_sol.npz') as data:
+        with np.load(f'data/{_filename(self)}_sol.npz') as data:
             for key in data.files:
                 setattr(self.sol,key,data[key])
 
         # c. solution
-        with np.load(f'data/{self.name}_{self.solmethod}_sim.npz') as data:
+        with np.load(f'data/{_filename(self)}_sim.npz') as data:
             for key in data.files:
                 setattr(self.sim,key,data[key])
+
+        # d. additional
+        filesavelist = f'data/{_filename(self)}.p'
+        if os.path.isfile(filesavelist):
+            with open(filesavelist, 'rb') as f:
+                addi_dict = pickle.load(f)
+            for key,val in addi_dict.items():
+                setattr(self,key,val)
 
     def __str__(self):
         """ called when model is printed """ 

@@ -2,7 +2,7 @@
 
 A code library for solving and simulating consumption-saving models in Python using Numba JIT compiled functions. The **consav** package provides:
 
-* A **ConsumptionSavingModel** class with predefined methods for e.g. saving and loading
+* A **Model** class with predefined methods for e.g. saving and loading
 * A **multi-linear interpolation** module
 * Optimizers such as **golden section search** and **newton-raphson**
 * An **upper envelope** function for using the endogenous grid point method in non-convex models
@@ -33,9 +33,8 @@ pip install git+https://github.com/NumEconCopenhagen/ConsumptionSaving
 
 To develop the package follow these steps:
 
-1. Install watchdog, `pip install watchdog`
-2. Clone this repository
-3. Locate the cloned repostiory in a terminal
-4. Run `python setyp.py watch`
+1. Clone this repository
+2. Locate the cloned repostiory in a terminal
+4. Run `pip install -e .`
 
-This re-installs the package whenever you make any changes. 
+Changes you make to the package is now immediately effective on your own computer. 

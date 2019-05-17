@@ -5,7 +5,6 @@ import setuptools
 import shlex
 import shutil
 import subprocess
-import threading
 import time
 
 
@@ -59,30 +58,10 @@ class DocsCommand(distutils.cmd.Command):
         else:
             subprocess.check_call(shlex.split(command), cwd="docs")
 
-
-class WatchCommand(distutils.cmd.Command):
-    """A custom command to format python code"""
-
-    description = "watch install"
-    user_options = []
-
-    def initialize_options(self):
-        """Set default values for options."""
-        pass
-
-    def finalize_options(self):
-        """Post-process options."""
-        pass
-
-    def run(self):
-        command = "python scripts/watcher.py"
-        subprocess.check_call(shlex.split(command))
-
-
 setuptools.setup(
     name="consav",
     version="0.1.0",
     author="Jeppe Druedahl",
     packages=setuptools.find_packages(),
-    cmdclass={"black": BlackCommand, "docs": DocsCommand, "watch": WatchCommand},
+    cmdclass={"black": BlackCommand, "docs": DocsCommand},
 )
