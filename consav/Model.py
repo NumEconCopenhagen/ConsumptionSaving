@@ -162,7 +162,7 @@ class ModelClass():
             if var[1] in [int32,double]:
                 description += f' {var[0]} = {val}\n'
             elif var[1] == boolean:
-                if var[1]:
+                if val:
                     description += f' {var[0]} = True\n'
                 else:
                     description += f' {var[0]} = False\n'
