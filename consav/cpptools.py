@@ -320,12 +320,14 @@ def get_pointers(pythonclass,ctstruct):
             setattr(p_ctstruct,key,val)
         elif isinstance(field[1](),ct.POINTER(ct.c_long)):
             assert np.issubdtype(val.dtype, np.int32)            
-            setattr(p_ctstruct,key,np.ctypeslib.as_ctypes(val.ravel()))
+            setattr(p_ctstruct,key,np.ctypeslib.as_ctypes(val.ravel()[0:1])) 
+            # why [0:1]? hack to avoid bug for arrays with more elements than highest int32
         elif isinstance(field[1](),ct.c_double):
             setattr(p_ctstruct,key,val)            
         elif isinstance(field[1](),ct.POINTER(ct.c_double)):
             assert np.issubdtype(val.dtype, np.double)
-            setattr(p_ctstruct,key,np.ctypeslib.as_ctypes(val.ravel()))
+            setattr(p_ctstruct,key,np.ctypeslib.as_ctypes(val.ravel()[0:1]))
+            # why [0:1]? hack to avoid bug for arrays with more elements than highest int32
         elif isinstance(field[1](),ct.c_bool):
             setattr(p_ctstruct,key,val)
         else:

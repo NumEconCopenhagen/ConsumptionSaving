@@ -9,20 +9,20 @@ import numpy as np
 from numba import njit
 
 @njit
-def optimizer(a,b,tol,obj,*args):
-    """ optimizer
+def optimizer(obj,a,b,args=(),tol=1e-6):
+    """ golden section search optimizer
     
     Args:
 
+        obj (callable): 1d function to optimize over
         a (double): minimum of starting bracket
         b (double): maximum of starting bracket
-        tol (dobule): tolerance
-        obj: function to optimize over
-        *args: additional arguments to the objective function
+        args (tuple): additional arguments to the objective function
+        tol (double,optional): tolerance
 
     Returns:
 
-        optimizer (callable): optimizer called as (a,b,tol,*args) where [a,b] is the starting bracket
+        (float): optimization result
     
     """
     
