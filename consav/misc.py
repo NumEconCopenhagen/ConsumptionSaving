@@ -54,7 +54,7 @@ def gauss_hermite(n):
     """
 
     # a. calculations
-    i = np.arange(1,5)
+    i = np.arange(1,n)
     a = np.sqrt(i/2)
     CM = np.diag(a,1) + np.diag(a,-1)
     L,V = np.linalg.eig(CM)
@@ -95,7 +95,7 @@ def log_normal_gauss_hermite(sigma, n):
     w = w/np.sqrt(math.pi)
 
     # c. assert a mean of one
-    assert(1.0-np.sum(w*x) < 1e-8)
+    assert(1.0-np.sum(w*x) < 1e-6)
 
     return x,w
 

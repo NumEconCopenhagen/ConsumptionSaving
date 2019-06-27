@@ -144,7 +144,7 @@ def _interp_2d_only_last_vec(prep,grid1,grid2,value,xi1,xi2,yi,monotone,search):
         grid2 (numpy.ndarray): 1d grid
         value (numpy.ndarray): value array (2d)
         xi1 (double): input point
-        xi2 (double): input point
+        xi2 (numpy.ndarray): vector of points
         yi (numpy.ndarray): output vector
         monotone (bool): indicator for whether xi2 is monotone
         search (bool): indicator for whether search is needed at all
@@ -196,7 +196,7 @@ def interp_2d_only_last_vec(prep,grid1,grid2,value,xi1,xi2,yi):
         grid2 (numpy.ndarray): 1d grid
         value (numpy.ndarray): value array (2d)
         xi1 (double): input point
-        xi2 (double): input point
+        xi2 (numpy.ndarray): vector of points
         yi (numpy.ndarray): output vector
 
     """
@@ -214,7 +214,7 @@ def interp_2d_only_last_vec_mon(prep,grid1,grid2,value,xi1,xi2,yi):
         grid2 (numpy.ndarray): 1d grid
         value (numpy.ndarray): value array (2d)
         xi1 (double): input point
-        xi2 (double): input point
+        xi2 (numpy.ndarray): vector of points
         yi (numpy.ndarray): output vector
 
     """
@@ -232,7 +232,7 @@ def interp_2d_only_last_vec_mon_rep(prep,grid1,grid2,value,xi1,xi2,yi):
         grid2 (numpy.ndarray): 1d grid
         value (numpy.ndarray): value array (2d)
         xi1 (double): input point
-        xi2 (double): input point
+        xi2 (numpy.ndarray): vector of points
         yi (numpy.ndarray): output vector
 
     """
