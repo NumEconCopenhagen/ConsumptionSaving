@@ -101,7 +101,7 @@ def create(ufunc,use_inv_w=False):
 
                 # ii. interpolate?
                 interp = (m >= m_low) and (m <= m_high)            
-                extrap_above = ia == Na-1 and m > m_vec[Na-1]
+                extrap_above = ia == Na-2 and m > m_vec[Na-1]
 
                 # iii. interpolation (or extrapolation)
                 if interp or extrap_above:

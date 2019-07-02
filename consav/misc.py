@@ -95,7 +95,7 @@ def log_normal_gauss_hermite(sigma, n):
     w = w/np.sqrt(math.pi)
 
     # c. assert a mean of one
-    assert(1.0-np.sum(w*x) < 1e-6)
+    #assert(1.0-np.sum(w*x) < 1e-6)
 
     return x,w
 
@@ -136,15 +136,15 @@ def create_shocks(sigma_psi,Npsi,sigma_xi,Nxi,pi,mu):
         xi = (xi-mu*pi)/(1.0-pi)
         xi = np.insert(xi,0,mu)
 
-    assert(np.allclose(np.sum(psi_w),1))
-    assert(np.allclose(np.sum(xi_w),1))
-    assert(np.allclose(np.sum(psi_w*psi),1))
-    assert(np.allclose(np.sum(xi_w*xi),1))
+    #assert(np.allclose(np.sum(psi_w),1))
+    #assert(np.allclose(np.sum(xi_w),1))
+    #assert(np.allclose(np.sum(psi_w*psi),1))
+    #assert(np.allclose(np.sum(xi_w*xi),1))
     
     # c. tensor product
     psi,xi = np.meshgrid(psi,xi,indexing='ij')
     psi_w,xi_w = np.meshgrid(psi_w,xi_w,indexing='ij')
 
-    assert(np.allclose(np.sum(psi_w*xi_w),1))
+    #assert(np.allclose(np.sum(psi_w*xi_w),1))
 
     return psi.ravel(), psi_w.ravel(), xi.ravel(), xi_w.ravel(), psi.size
