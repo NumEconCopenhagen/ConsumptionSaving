@@ -10,7 +10,7 @@ import os
 import ctypes as ct
 import pickle
 import numpy as np
-from numba import jitclass, int32, double, boolean
+from numba import jitclass, int32, int64, double, boolean
 
 from . import cpptools
 
@@ -159,7 +159,7 @@ class ModelClass():
         description = f'Modelclass: {self.__class__.__name__}\n'
         description += 'Parameters:\n'
         for var,val in zip(self.parlist,values):
-            if var[1] in [int32,double]:
+            if var[1] in [int32,int64,double]:
                 description += f' {var[0]} = {val}\n'
             elif var[1] == boolean:
                 if val:
