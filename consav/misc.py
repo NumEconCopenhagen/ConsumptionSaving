@@ -70,14 +70,15 @@ def gauss_hermite(n):
 
     return x,w
 
-def log_normal_gauss_hermite(sigma, n, exp=True):
-    """ log-normal gauss-hermite nodes
+def normal_gauss_hermite(sigma, n=7, mu=None, exp=True):
+    """ normal gauss-hermite nodes
 
     Args:
 
         sigma (double): standard deviation
         n (int): number of points
-        exp (bool): take exp and correct mean
+        mu (double,optinal): mean
+        exp (bool,optinal): take exp and correct mean (if not specified)
 
     Returns:
 
@@ -88,19 +89,28 @@ def log_normal_gauss_hermite(sigma, n, exp=True):
 
     if sigma == 0.0 or n == 1:
         x = np.ones(n)
+        if mu is not None:
+            x += mu
         w = np.ones(n)
         return x,w
 
     # a. GaussHermite
     x,w = gauss_hermite(n)
+    x *= np.sqrt(2)*sigma 
 
     # b. log-normality
     if exp:
-        x = np.exp(x*np.sqrt(2)*sigma-0.5*sigma**2)
+        if mu is None:
+            x = np.exp(x - 0.5*sigma**2)
+        else:
+            x = np.exp(x + mu)
     else:
-        x = x*np.sqrt(2)*sigma 
+        if mu is None:
+            x = x 
+        else:
+            x = x + mu
 
-    w = w/np.sqrt(math.pi)
+    w /= np.sqrt(math.pi)
 
     return x,w
 
@@ -127,9 +137,9 @@ def create_shocks(sigma_psi,Npsi,sigma_xi,Nxi,pi,mu):
     """
 
     # a. gauss hermite
-    psi, psi_w = log_normal_gauss_hermite(sigma_psi, Npsi)
-    xi, xi_w = log_normal_gauss_hermite(sigma_xi, Nxi)
- 
+    psi, psi_w = normal_gauss_hermite(sigma_psi, Npsi)
+    xi, xi_w = normal_gauss_hermite(sigma_xi, Nxi)
+
     # b. add low inncome shock
     if pi > 0:
          
