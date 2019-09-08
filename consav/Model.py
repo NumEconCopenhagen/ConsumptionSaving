@@ -7,10 +7,11 @@ and interfacing with C++.
 """
 
 import os
+import copy
 import ctypes as ct
 import pickle
 import numpy as np
-from numba import jitclass, int32, double, boolean
+from numba import jitclass, int32, int64, double, boolean
 
 from . import cpptools
 
@@ -102,7 +103,7 @@ class ModelClass():
         if not os.path.exists('data'):
             os.makedirs('data')
 
-        # a. save parameters pickle
+        # a. save parameters
         par_dict = _convert_to_dict(self.par,self.parlist)
         with open(f'data/{_filename(self)}_par.p', 'wb') as f:
             pickle.dump(par_dict, f)
@@ -117,17 +118,49 @@ class ModelClass():
 
         # d. additional
         if hasattr(self,'savelist'):
-            addi_dict = _convert_to_dict(self,self.savelist + ['savelist'])
+            additional_dict = _convert_to_dict(self,self.savelist + ['savelist'])
             with open(f'data/{_filename(self)}.p', 'wb') as f:
-                pickle.dump(addi_dict, f)        
+                pickle.dump(additional_dict, f)        
+
+    def copy(self,**kwargs):
+        """ copy the model parameters, the solution simulation variables """
+
+        other = self.__class__()
+
+        # a. save parameters
+        par_dict = _convert_to_dict(self.par,self.parlist)
+        for key,val in par_dict.items():
+            setattr(other.par,key,copy.copy(val))
+
+        # b. solution
+        sol_dict = _convert_to_dict(self.sol,self.sollist)
+        for key,val in sol_dict.items():
+            setattr(other.sol,key,copy.copy(val))
+    
+        # c. simulation
+        sim_dict = _convert_to_dict(self.sim,self.simlist)
+        for key,val in sim_dict.items():
+            setattr(other.sim,key,copy.copy(val))
+
+        # d. additional
+        if hasattr(self,'savelist'):
+            for key in self.savelist:
+                setattr(other,key,copy.copy(getattr(self,key)))
+            other.savelist = self.savelist
+
+        # e. update
+        for key,val in kwargs.items():
+            setattr(other.par,key,val) # like par.key = val
+
+        return other
 
     def load(self):
         """ load the model parameters and solution and simulation variables"""
 
         # a. parameters
         with open(f'data/{_filename(self)}_par.p', 'rb') as f:
-            self.par_dict = pickle.load(f)
-        for key,val in self.par_dict.items():
+            par_dict = pickle.load(f)
+        for key,val in par_dict.items():
             setattr(self.par,key,val)
 
         # b. solution
@@ -144,8 +177,8 @@ class ModelClass():
         filesavelist = f'data/{_filename(self)}.p'
         if os.path.isfile(filesavelist):
             with open(filesavelist, 'rb') as f:
-                addi_dict = pickle.load(f)
-            for key,val in addi_dict.items():
+                additional_dict = pickle.load(f)
+            for key,val in additional_dict.items():
                 setattr(self,key,val)
 
     def __str__(self):
@@ -159,7 +192,7 @@ class ModelClass():
         description = f'Modelclass: {self.__class__.__name__}\n'
         description += 'Parameters:\n'
         for var,val in zip(self.parlist,values):
-            if var[1] in [int32,double]:
+            if var[1] in [int32,int64,double]:
                 description += f' {var[0]} = {val}\n'
             elif var[1] == boolean:
                 if val:
