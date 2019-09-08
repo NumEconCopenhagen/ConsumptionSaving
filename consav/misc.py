@@ -6,6 +6,9 @@ This module provides misc functions.
 
 import math
 import numpy as np
+from scipy.stats import norm
+from numpy.linalg import svd
+from numba import njit
 
 def nonlinspace(x_min, x_max, n, phi):
     """ like np.linspace. but with unequal spacing
@@ -67,13 +70,15 @@ def gauss_hermite(n):
 
     return x,w
 
-def log_normal_gauss_hermite(sigma, n):
-    """ log-normal gauss-hermite nodes
+def normal_gauss_hermite(sigma, n=7, mu=None, exp=True):
+    """ normal gauss-hermite nodes
 
     Args:
 
         sigma (double): standard deviation
         n (int): number of points
+        mu (double,optinal): mean
+        exp (bool,optinal): take exp and correct mean (if not specified)
 
     Returns:
 
@@ -84,18 +89,28 @@ def log_normal_gauss_hermite(sigma, n):
 
     if sigma == 0.0 or n == 1:
         x = np.ones(n)
+        if mu is not None:
+            x += mu
         w = np.ones(n)
         return x,w
 
     # a. GaussHermite
     x,w = gauss_hermite(n)
+    x *= np.sqrt(2)*sigma 
 
     # b. log-normality
-    x = np.exp(x*np.sqrt(2)*sigma-0.5*sigma**2)
-    w = w/np.sqrt(math.pi)
+    if exp:
+        if mu is None:
+            x = np.exp(x - 0.5*sigma**2)
+        else:
+            x = np.exp(x + mu)
+    else:
+        if mu is None:
+            x = x 
+        else:
+            x = x + mu
 
-    # c. assert a mean of one
-    #assert(1.0-np.sum(w*x) < 1e-6)
+    w /= np.sqrt(math.pi)
 
     return x,w
 
@@ -122,9 +137,9 @@ def create_shocks(sigma_psi,Npsi,sigma_xi,Nxi,pi,mu):
     """
 
     # a. gauss hermite
-    psi, psi_w = log_normal_gauss_hermite(sigma_psi, Npsi)
-    xi, xi_w = log_normal_gauss_hermite(sigma_xi, Nxi)
- 
+    psi, psi_w = normal_gauss_hermite(sigma_psi, Npsi)
+    xi, xi_w = normal_gauss_hermite(sigma_xi, Nxi)
+
     # b. add low inncome shock
     if pi > 0:
          
@@ -135,16 +150,101 @@ def create_shocks(sigma_psi,Npsi,sigma_xi,Nxi,pi,mu):
         # b. values
         xi = (xi-mu*pi)/(1.0-pi)
         xi = np.insert(xi,0,mu)
-
-    #assert(np.allclose(np.sum(psi_w),1))
-    #assert(np.allclose(np.sum(xi_w),1))
-    #assert(np.allclose(np.sum(psi_w*psi),1))
-    #assert(np.allclose(np.sum(xi_w*xi),1))
     
     # c. tensor product
     psi,xi = np.meshgrid(psi,xi,indexing='ij')
     psi_w,xi_w = np.meshgrid(psi_w,xi_w,indexing='ij')
 
-    #assert(np.allclose(np.sum(psi_w*xi_w),1))
-
     return psi.ravel(), psi_w.ravel(), xi.ravel(), xi_w.ravel(), psi.size
+
+def tauchen(mu,rho,sigma,m=3,N=7,cutoff=np.nan):
+    """ tauchen approximation of autoregressive process
+
+    Args:
+
+        mu (double): mean
+        rho (double): AR(1) coefficients
+        sigma (double): std. of shock
+        m (int): scale factor for width of grid
+        N (int): number of grid points
+        cutoff (double): 
+
+    Returns:
+
+        x (numpy.ndarray): grid
+        trans (numpy.ndarray): transition matrix
+        ergodic (numpy.ndarray): ergodic distribution
+        trans_cumsum (numpy.ndarray): transition matrix (cumsum)
+        ergodic_cumsum (numpy.ndarray): ergodic distribution (cumsum)
+
+    """
+     
+    # a. allocate
+    x = np.zeros(N)
+    trans = np.zeros((N,N))
+     
+    # b. discretize x
+    std_x = np.sqrt(sigma**2/(1-rho**2))
+  
+    x[0]    = mu/(1-rho) - m*std_x
+    x[N-1]  = mu/(1-rho) + m*std_x
+  
+    step    = (x[N-1]-x[0])/(N-1)
+  
+    for i in range(1,N-1):
+        x[i] = x[i-1] + step
+         
+    # c. generate transition matrix
+    for j in range(N):
+
+        trans[j,0] = norm.cdf((x[0] - mu - rho*x[j] + step/2) / sigma)
+        trans[j,N-1] = 1 - norm.cdf((x[N-1] - mu - rho*x[j] - step/2) / sigma)
+        
+        for k in range(1,N-1):
+            trans[j,k] = norm.cdf((x[k] - mu - rho*x[j] + step/2) / sigma) - \
+                         norm.cdf((x[k] - mu - rho*x[j] - step/2) / sigma)
+                       
+    # d. find the ergodic distribution
+    ergodic = _find_ergodic(trans)
+
+    # e. apply cutoff
+    if not np.isnan(cutoff):  
+        trans[trans < cutoff] = 0         
+
+    # f. find cumsums
+    trans_cumsum = np.array([np.cumsum(trans[i, :]) for i in range(N)])
+    ergodic_cumsum = np.cumsum(ergodic)
+
+    return x, trans, ergodic, trans_cumsum, ergodic_cumsum
+
+def _find_ergodic(trans,atol=1e-13,rtol=0):
+
+    I = np.identity(len(trans))
+    A = np.atleast_2d(np.transpose(trans)-I)
+    _u, s, vh = svd(A)
+    tol = max(atol, rtol * s[0])
+    nnz = (s >= tol).sum()
+    ns = vh[nnz:].conj().T
+
+    return (ns/(sum(ns))).ravel()
+
+@njit
+def choice(r,p_cumsum):
+    """ select from cumulated probilities 
+
+    Args:
+
+        r (double): uniform random number
+        p_cumsum (numpy.ndarray): vector of cumulated probabilities, [x,y,z,...,1] where z > y > x > 0
+
+    Returns:
+
+        i (int): selection index
+
+    """
+
+    i = 0
+    while r > p_cumsum[i]:
+        i = i + 1
+
+    return i
