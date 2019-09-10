@@ -97,7 +97,7 @@ class ModelClass():
         
         return _convert_to_dict(self.par,self.parlist)
 
-    def save(self):
+    def save(self,drop_sol=False,drop_sim=False):
         """ save the model parameters, the solution simulation variables """
         
         if not os.path.exists('data'):
@@ -109,11 +109,17 @@ class ModelClass():
             pickle.dump(par_dict, f)
 
         # b. solution
-        sol_dict = _convert_to_dict(self.sol,self.sollist)
+        if drop_sol:
+            sol_dict = {}
+        else:
+            sol_dict = _convert_to_dict(self.sol,self.sollist)
         np.savez(f'data/{_filename(self)}_sol.npz', **sol_dict)
     
         # c. simulation
-        sim_dict = _convert_to_dict(self.sim,self.simlist)
+        if drop_sim:
+            sim_dict = {}
+        else:        
+            sim_dict = _convert_to_dict(self.sim,self.simlist)
         np.savez(f'data/{_filename(self)}_sim.npz', **sim_dict)
 
         # d. additional
