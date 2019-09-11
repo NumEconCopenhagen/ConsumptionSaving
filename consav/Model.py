@@ -152,7 +152,7 @@ class ModelClass():
         if hasattr(self,'savelist'):
             for key in self.savelist:
                 setattr(other,key,copy.copy(getattr(self,key)))
-            other.savelist = self.savelist
+            other.savelist = copy.deepcopy(self.savelist)
 
         # e. update
         for key,val in kwargs.items():
