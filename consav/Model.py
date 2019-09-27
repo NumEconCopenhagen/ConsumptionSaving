@@ -151,7 +151,7 @@ class ModelClass():
         # d. additional
         if hasattr(self,'savelist'):
             for key in self.savelist:
-                setattr(other,key,copy.copy(getattr(self,key)))
+                setattr(other,key,copy.deepcopy(getattr(self,key)))
             other.savelist = copy.deepcopy(self.savelist)
 
         # e. update
