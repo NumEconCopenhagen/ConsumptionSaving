@@ -207,6 +207,10 @@ class ModelClass():
                     description += f' {var[0]} = False\n'
             elif var[1] in [double[:],double[:,:],double[:,:,:],double[:,:,:,:]]:
                 description += f' {var[0]} = [array of doubles]\n'
+            elif var[1] in [int32[:],int32[:,:],int32[:,:,:],int32[:,:,:,:]]:
+                description += f' {var[0]} = [array of int32]\n'
+            elif var[1] in [int64[:],int64[:,:],int64[:,:,:],int64[:,:,:,:]]:
+                description += f' {var[0]} = [array of int64]\n'                                
             else:
                 description += f' {var[0]} = ?\n'
 
