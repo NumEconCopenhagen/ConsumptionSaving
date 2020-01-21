@@ -44,6 +44,8 @@ def nonlinspace(x_min, x_max, n, phi):
  
 @njit
 def nonlinspace_jit(x_min, x_max, n, phi):
+    """ like nonlinspace, but can be used in numba """
+        
     y = np.zeros(n)
 
     y[0] = x_min
