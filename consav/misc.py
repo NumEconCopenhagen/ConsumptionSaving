@@ -42,6 +42,16 @@ def nonlinspace(x_min, x_max, n, phi):
  
     return y
  
+@njit
+def nonlinspace_jit(x_min, x_max, n, phi):
+    y = np.zeros(n)
+
+    y[0] = x_min
+    for i in range(1,n):
+        y[i] = y[i-1] + (x_max-y[i-1]) / (n-i)**phi 
+    
+    return y
+
 def gauss_hermite(n):
     """ gauss-hermite nodes
 
