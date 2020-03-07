@@ -19,7 +19,7 @@ import zipfile
 import urllib.request
 import ctypes as ct
 import numpy as np
-from numba import int32, double, boolean
+import numba as nb
 
 import os, zipfile
 
@@ -241,19 +241,25 @@ def get_fields(nblist):
     ctlist = []
     cttxt = ''
     for nbelem in nblist:
-        if nbelem[1] == int32:
+        if nbelem[1] == nb.int32:
             ctlist.append((nbelem[0],ct.c_long))
             cttxt += f' int {nbelem[0]};\n'
-        elif nbelem[1] == double:
+        elif nbelem[1] == nb.int64:
+            ctlist.append((nbelem[0],ct.c_long))
+            cttxt += f' int {nbelem[0]};\n'            
+        elif nbelem[1] == nb.double:
             ctlist.append((nbelem[0],ct.c_double))          
             cttxt += f' double {nbelem[0]};\n'
-        elif nbelem[1] == boolean:
+        elif nbelem[1] == nb.boolean:
             ctlist.append((nbelem[0],ct.c_bool))
             cttxt += f' bool {nbelem[0]};\n'
-        elif nbelem[1].dtype == int32:
+        elif nbelem[1].dtype == nb.int32:
             ctlist.append((nbelem[0],ct.POINTER(ct.c_long)))               
             cttxt += f' int *{nbelem[0]};\n'
-        elif nbelem[1].dtype == double:
+        elif nbelem[1].dtype == nb.int64:
+            ctlist.append((nbelem[0],ct.POINTER(ct.c_long)))               
+            cttxt += f' int *{nbelem[0]};\n'            
+        elif nbelem[1].dtype == nb.double:
             ctlist.append((nbelem[0],ct.POINTER(ct.c_double)))
             cttxt += f' double *{nbelem[0]};\n'
         else:

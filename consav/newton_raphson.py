@@ -66,7 +66,7 @@ def optimizer(obj,x0,args=(),max_iter=5000,grad_step=1.0e-5,tol_f=1.0e-6,tol_x=1
             break
                 
         # e. line-search
-        if f_now>=f_min: # worsening, take avg of the last two iterations
+        if f_now >= f_min: # worsening, take avg of the last two iterations
 
             x_step = 0.5*(x_min[:] + x_now[:])
             f_step = obj(x_step,*args)
@@ -101,7 +101,8 @@ def num_grad(obj,x,grad_step,f0,grad,x_grad,*args):
 
         step_now = np.fmax(grad_step*xi,grad_step) # step
         
-        x_grad = x[:] # baseline
+        x_grad = x.copy()
+        x_grad[:] = x[:] # baseline
         x_grad[i] = xi + step_now # change
         grad[i] = (obj(x_grad,*args)-f0)/step_now # gradient
 

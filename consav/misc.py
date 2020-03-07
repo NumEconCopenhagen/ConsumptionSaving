@@ -11,10 +11,25 @@ from scipy.stats import norm
 from numpy.linalg import svd
 from numba import njit
 
-def elapsed(t0):
+def elapsed(t0,t1=None):
+    """ time elapsed since t0 with in nice format
 
-    secs = time.time()-t0
-    
+    Args:
+
+        t0 (double): start time
+        t1 (double,optional): end time (else now)
+
+    Return:
+
+        (str): elapsed time in nice format
+
+    """ 
+
+    if t1 is None:
+        secs = time.time()-t0
+    else:
+        secs = t1-t0
+
     days = secs//(60*60*24)
     secs -= 60*60*24*days
 
@@ -154,7 +169,7 @@ def normal_gauss_hermite(sigma, n=7, mu=None, exp=True):
 
     return x,w
 
-def create_shocks(sigma_psi,Npsi,sigma_xi,Nxi,pi,mu):
+def create_shocks(sigma_psi,Npsi,sigma_xi,Nxi,pi=0,mu=None):
     """ log-normal gauss-hermite nodes for permanent transitory model
 
     Args:
@@ -258,6 +273,19 @@ def tauchen(mu,rho,sigma,m=3,N=7,cutoff=np.nan):
     return x, trans, ergodic, trans_cumsum, ergodic_cumsum
 
 def _find_ergodic(trans,atol=1e-13,rtol=0):
+    """ find ergodic distribution from transition matrix 
+    
+    Args:
+
+        trans (numpy.ndarray): transition matrix
+        atol (double): absolute tolerance
+        rtol (double): relative tolerance
+    
+    Returns:
+
+        (nump.ndarray): ergodic distribution
+
+    """
 
     I = np.identity(len(trans))
     A = np.atleast_2d(np.transpose(trans)-I)

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """smd_std_error
 
 This module provides a funciton for calculating standard errors.

@@ -10,17 +10,18 @@ import os
 import copy
 import ctypes as ct
 import pickle
+from types import SimpleNamespace
 import numpy as np
-from numba import jitclass, int32, int64, double, boolean
+import numba as nb
 
 from . import cpptools
 
 # for save/load
 def _filename(model):    
-    if hasattr(model,'solmethod'):
-        return f'{model.name}_{model.solmethod}'
-    else:
+    if model.solmethod is None:
         return f'{model.name}'
+    else:
+        return f'{model.name}_{model.solmethod}'
 
 def _convert_to_dict(someclass,somelist):
 
@@ -33,26 +34,87 @@ def _convert_to_dict(someclass,somelist):
     values = [getattr(someclass,key) for key in keys]
     return {key:val for key,val in zip(keys,values)}
 
+global_savelist =  ['compiler','not_float_list','parlist','sollist','simlist','vs_path','intel_path','intel_vs_version','savelist']
+
 # main
 class ModelClass():
     
-    def __init__(self):
+    def __init__(self,name=None,
+                      solmethod=None,
+                      load=False,
+                      compiler='vs',**kwargs):
+        
         """ defines default attributes """
 
-        self.name = None # name of parametrization
-        self.solmethod = None # solution methods
-        self.compiler = None # compiler
-        self.parlist = [] # list of parameters, (name,numba type)
-        self.par = None # jitted class with fields as in parlist
-        self.sollist = [] # list of parameters, (name,numba type)        
-        self.sol = None # jitted class with fields as in sollist
-        self.simlist = [] # list of parameters, (name,numba type)        
-        self.sim = None # jitted class with fields as in sollist        
-        self.log = None # log text
+        if name is None: raise Exception('name must be specified') 
+
+        # a. basic information
+        self.name = name # name of parametrization
+        self.solmethod = solmethod # solution methods
+        self.compiler = compiler # compiler
+
+        # b. basic data structre
+        self.par = SimpleNamespace()
+        self.sol = SimpleNamespace()
+        self.sim = SimpleNamespace()        
+
+        # c. compiler information
         self.vs_path = 'C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary/Build/'
         self.intel_path = 'C:/Program Files (x86)/IntelSWTools/compilers_and_libraries_2018.5.274/windows/bin/'
         self.intel_vs_version = 'vs2017'
+
+        # d. misc
+        self.not_float_list = None
         self.savelist = []
+
+        # e. setup
+        if load: 
+            self.load()
+            for key,val in kwargs.items(): setattr(self.par,key,val)
+        else: 
+            self.setup()
+            for key,val in kwargs.items(): setattr(self.par,key,val)
+            self.allocate()
+            self.setup_subclasses()
+
+    def setup(self):
+        """ set independent variables in par, sol and sim """
+
+        raise Exception('The model must have defined an .setup() method')
+
+    def allocate(self):
+        """ set dependent variables in par, sol and sim """
+
+        raise Exception('The model must have defined an .allocate() method')
+
+    def setup_subclasses(self):
+        """ setup jitted subclasses par, sol and sim with automatic type inference """
+
+        # a. convert to dictionaries
+        par_dict = self.par.__dict__
+        sol_dict = self.sol.__dict__
+        sim_dict = self.sim.__dict__
+        
+        # b. infer types
+        def check(key,val):
+
+            assert np.isscalar(val) or type(val) is np.ndarray, f'{key} is not scalar or numpy array'
+            if not self.not_float_list is None and np.isscalar(val):
+                assert type(val) is np.float or key in self.not_float_list, f'{key} is {type(val)}, not floa, but not on the list'
+
+            return val
+
+        parlist = [(key,nb.typeof(check(key,val))) for key,val in par_dict.items()]
+        sollist = [(key,nb.typeof(check(key,val))) for key,val in sol_dict.items()]
+        simlist = [(key,nb.typeof(check(key,val))) for key,val in sim_dict.items()]
+
+        # c. create subclasses
+        self.par,self.sol,self.sim = self.create_subclasses(parlist,sollist,simlist)
+
+        # d. set values
+        for key,val in par_dict.items(): setattr(self.par,key,val)
+        for key,val in sol_dict.items(): setattr(self.sol,key,val)
+        for key,val in sim_dict.items(): setattr(self.sim,key,val)
 
     def create_subclasses(self,parlist,sollist,simlist):
         """ create jitted subclasses par, sol, sim
@@ -75,17 +137,17 @@ class ModelClass():
         self.sollist = sollist
         self.simlist = simlist
 
-        @jitclass(self.parlist) # numba class with variables in parlist
+        @nb.jitclass(self.parlist) # numba class with variables in parlist
         class ParClass():
             def __init__(self):
                 pass
 
-        @jitclass(self.sollist) # numba jit class with variables in sollist
+        @nb.jitclass(self.sollist) # numba jit class with variables in sollist
         class SolClass():
             def __init__(self):
                 pass
 
-        @jitclass(self.simlist) # numba jit class with variables in simlist
+        @nb.jitclass(self.simlist) # numba jit class with variables in simlist
         class SimClass():
             def __init__(self):
                 pass
@@ -96,6 +158,16 @@ class ModelClass():
         """ get dictionary for the par subclass """
         
         return _convert_to_dict(self.par,self.parlist)
+
+    def get_sol_dict(self):
+        """ get dictionary for the sol subclass """
+        
+        return _convert_to_dict(self.sol,self.sollist)
+
+    def get_sim_dict(self):
+        """ get dictionary for the sim subclass """
+        
+        return _convert_to_dict(self.sim,self.simlist)
 
     def save(self,drop_sol=False,drop_sim=False):
         """ save the model parameters, the solution simulation variables """
@@ -123,15 +195,18 @@ class ModelClass():
         np.savez(f'data/{_filename(self)}_sim.npz', **sim_dict)
 
         # d. additional
-        if hasattr(self,'savelist'):
-            additional_dict = _convert_to_dict(self,self.savelist + ['savelist'])
-            with open(f'data/{_filename(self)}.p', 'wb') as f:
-                pickle.dump(additional_dict, f)        
+        for x in global_savelist: 
+            if not hasattr(self,x): setattr(self,x,None)
+            
+        additional_dict = _convert_to_dict(self,self.savelist + global_savelist)
+        with open(f'data/{_filename(self)}.p', 'wb') as f:
+            pickle.dump(additional_dict, f)        
 
-    def copy(self,**kwargs):
+    def copy(self,name=None,**kwargs):
         """ copy the model parameters, the solution simulation variables """
-
-        other = self.__class__()
+        
+        if name is None: name = f'{self.name}_copy' # if not
+        other = self.__class__(name=name,solmethod=self.solmethod,compiler=self.compiler)
 
         # a. save parameters
         par_dict = _convert_to_dict(self.par,self.parlist)
@@ -149,10 +224,11 @@ class ModelClass():
             setattr(other.sim,key,copy.copy(val))
 
         # d. additional
-        if hasattr(self,'savelist'):
-            for key in self.savelist:
-                setattr(other,key,copy.deepcopy(getattr(self,key)))
-            other.savelist = copy.deepcopy(self.savelist)
+        for x in global_savelist: 
+            if not hasattr(self,x): setattr(self,x,None)
+
+        for key in self.savelist + global_savelist:
+            setattr(other,key,copy.deepcopy(getattr(self,key)))
 
         # e. update
         for key,val in kwargs.items():
@@ -190,29 +266,43 @@ class ModelClass():
     def __str__(self):
         """ called when model is printed """ 
         
-        # a. keys and values in parlist
-        keys = [var[0] for var in self.parlist]
-        values = [getattr(self.par,key) for key in keys]
+        def print_list(class_,list_):
 
-        # b. create description
-        description = f'Modelclass: {self.__class__.__name__}\n'
+            description = ''
+
+            keys = [var[0] for var in list_]
+            values = [getattr(class_,key) for key in keys]
+
+            nbytes = 0
+            for var,val in zip(list_,values):    
+                if np.isscalar(val) and not var[1] == nb.boolean:
+                    description += f' {var[0]} = {val} [{var[1]}]\n'
+                elif var[1] == nb.boolean:
+                    if val:
+                        description += f' {var[0]} = True\n'
+                    else:
+                        description += f' {var[0]} = False\n'
+                elif type(var[1]) is nb.types.npytypes.Array:
+                    description += f' {var[0]} = {var[1]} with shape = {val.shape}\n'            
+                    nbytes += val.nbytes
+                else:                
+                    description += f' {var[0]} = ?\n'
+
+            description += f'memory, gb: {nbytes/(10**9):.1f}\n' 
+            return description
+
+        description = f'Modelclass: {self.__class__.__name__}\n\n'
+
         description += 'Parameters:\n'
-        for var,val in zip(self.parlist,values):
-            if var[1] in [int32,int64,double]:
-                description += f' {var[0]} = {val}\n'
-            elif var[1] == boolean:
-                if val:
-                    description += f' {var[0]} = True\n'
-                else:
-                    description += f' {var[0]} = False\n'
-            elif var[1] in [double[:],double[:,:],double[:,:,:],double[:,:,:,:]]:
-                description += f' {var[0]} = [array of doubles]\n'
-            elif var[1] in [int32[:],int32[:,:],int32[:,:,:],int32[:,:,:,:]]:
-                description += f' {var[0]} = [array of int32]\n'
-            elif var[1] in [int64[:],int64[:,:],int64[:,:,:],int64[:,:,:,:]]:
-                description += f' {var[0]} = [array of int64]\n'                                
-            else:
-                description += f' {var[0]} = ?\n'
+        description += print_list(self.par,self.parlist)
+        description += '\n'
+
+        description += 'Solution:\n'
+        description += print_list(self.sol,self.sollist)
+        description += '\n'
+
+        description += 'Simulation:\n'
+        description += print_list(self.sim,self.simlist)
 
         return description 
 
