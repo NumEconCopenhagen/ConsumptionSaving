@@ -99,8 +99,9 @@ class ModelClass():
         def check(key,val):
 
             assert np.isscalar(val) or type(val) is np.ndarray, f'{key} is not scalar or numpy array'
-            if not self.not_float_list is None and np.isscalar(val):
-                assert type(val) is np.float or key in self.not_float_list, f'{key} is {type(val)}, not floa, but not on the list'
+            if self.not_float_list is None: raise Exception('The model must have a par.not_float_list = []')
+            if np.isscalar(val):
+                assert type(val) is np.float or key in self.not_float_list, f'{key} is {type(val)}, not float, but not on the list'
 
             return val
 
