@@ -85,6 +85,26 @@ def nonlinspace(x_min, x_max, n, phi):
  
     return y
  
+def equilogspace(x_min,x_max,n):
+    """ like np.linspace. but (close to)  equidistant in logs
+
+    Args:
+
+        x_min (double): maximum value
+        x_max (double): minimum value
+        n (int): number of points
+    
+    Returns:
+
+        y (list): grid with unequal spacing
+
+    """
+
+    pivot = np.abs(x_min) + 0.25
+    y = np.geomspace(x_min + pivot, x_max + pivot, n) - pivot
+    y[0] = x_min  # make sure *exactly* equal to x_min
+    return y
+
 @njit
 def nonlinspace_jit(x_min, x_max, n, phi):
     """ like nonlinspace, but can be used in numba """
@@ -218,7 +238,7 @@ def tauchen(mu,rho,sigma,m=3,N=7,cutoff=np.nan):
     Args:
 
         mu (double): mean
-        rho (double): AR(1) coefficients
+        rho (double): AR(1) coefficient
         sigma (double): std. of shock
         m (int): scale factor for width of grid
         N (int): number of grid points
@@ -271,6 +291,50 @@ def tauchen(mu,rho,sigma,m=3,N=7,cutoff=np.nan):
     ergodic_cumsum = np.cumsum(ergodic)
 
     return x, trans, ergodic, trans_cumsum, ergodic_cumsum
+
+def markov_rouwenhorst(rho,sigma,N=7):
+    """Rouwenhorst method analog to markov_tauchen
+
+    Args:
+
+        rho (double): AR(1) coefficient
+        sigma (double): std. of shock
+        N (int): number of grid points
+
+    Returns:
+
+        y (numpy.ndarray): grid
+        trans (numpy.ndarray): transition matrix
+        ergodic (numpy.ndarray): ergodic distribution
+
+    """
+
+    # a. parametrize Rouwenhorst for n=2
+    p = (1+rho)/2
+    trans = np.array([[p,1-p],[1-p,p]])
+
+    # b. implement recursion to build from n = 3 to n = N
+    for n in range(3, N + 1):
+        P1, P2, P3, P4 = (np.zeros((n, n)) for _ in range(4))
+        P1[:-1, :-1] = p * trans
+        P2[:-1, 1:] = (1 - p) * trans
+        P3[1:, :-1] = (1 - p) * trans
+        P4[1:, 1:] = p * trans
+        trans = P1 + P2 + P3 + P4
+        trans[1:-1] /= 2
+
+    # c. invariant distribution
+    ergodic = _find_ergodic(trans)
+
+    # d. scaling
+    s = np.linspace(-1, 1, N)
+    mean = np.sum(ergodic*s)
+    sigma_ = np.sqrt(np.sum(ergodic*(s-mean)**2))
+    s *= (sigma / sigma_)
+
+    y = np.exp(s) / np.sum(ergodic * np.exp(s))
+
+    return y, trans, ergodic
 
 def _find_ergodic(trans,atol=1e-13,rtol=0):
     """ find ergodic distribution from transition matrix 
