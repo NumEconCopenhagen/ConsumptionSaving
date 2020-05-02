@@ -67,15 +67,16 @@ class ModelClass():
         self.not_float_list = None
         self.savelist = []
 
-        # e. setup
+        # e. setup (including type inference)
+        self.setup()
+        for key,val in kwargs.items(): setattr(self.par,key,val)
+        self.allocate()
+        self.setup_subclasses()
+
+        # f. load
         if load: 
             self.load()
             for key,val in kwargs.items(): setattr(self.par,key,val)
-        else: 
-            self.setup()
-            for key,val in kwargs.items(): setattr(self.par,key,val)
-            self.allocate()
-            self.setup_subclasses()
 
     def setup(self):
         """ set independent variables in par, sol and sim """
