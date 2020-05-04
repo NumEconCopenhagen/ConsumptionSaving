@@ -8,18 +8,18 @@ to compile a .dll file. The link() function loads the .dll file and defines
 the required functions. The .dll can be unloaded with unlink().
 
 In the sub-section #struct# an interface for passing a Python class to a C++ struct 
-is included. The order of fields must be exactly the same in Python and Cc++. To 
+is included. The order of fields must be exactly the same in Python and C++. To 
 avoid errors a function writing the C++ struct from the Python class (with 
 type definitions from numba) is provided.
 
 """
 
 import os
+import time
 import zipfile
 import urllib.request
 import ctypes as ct
 import numpy as np
-import numba as nb
 
 import os, zipfile
 
@@ -159,7 +159,8 @@ def set_argtypes(cppfile,funcs):
         funcnow.restype = None
         funcnow.argtypes = argtypes
 
-def link(filename,funcs,use_openmp_with_vs=False,do_print=True): 
+def link(filename,funcs,use_openmp_with_vs=False,do_print=True,
+         nlopt_lib = 'cppfuncs/nlopt-2.4.2-dll64/libnlopt-0.lib'): 
     """ link cpp library
         
     Args:
@@ -171,12 +172,15 @@ def link(filename,funcs,use_openmp_with_vs=False,do_print=True):
 
     Return:
     
-        cppfile (ctypes.CDLL): c++ library (result of ct.cdll.LoadLibrary('cppfile.dll'))
+        cppfile (ctypes.CDLL): C++ library (result of ct.cdll.LoadLibrary('cppfile.dll'))
     
     """
 
     # a. link
-    cppfile = ct.cdll.LoadLibrary(filename + '.dll')
+    if os.path.isfile(nlopt_lib):
+        cppfile = ct.cdll.LoadLibrary(f'{os.getcwd()}/libnlopt-0.dll')
+
+    cppfile = ct.cdll.LoadLibrary(f'{os.getcwd()}/{filename}.dll')
     if do_print:
         print('cpp files loaded')
     
@@ -185,7 +189,7 @@ def link(filename,funcs,use_openmp_with_vs=False,do_print=True):
     if use_openmp_with_vs: # needed with openmp
         cppfile.setup_omp() # must exist
         delink(cppfile,filename,do_print=False,do_remove=False)
-        cppfile = ct.cdll.LoadLibrary(filename)
+        cppfile = ct.cdll.LoadLibrary(f'{os.getcwd()}/{filename}.dll')
         set_argtypes(cppfile,funcs)
 
     return cppfile
@@ -195,7 +199,7 @@ def delink(cppfile,filename,do_print=True,do_remove=True):
         
     Args:
     
-        cppfile (ctypes.CDLL): c++ library (result of ct.cdll.LoadLibrary('cppfile.dll'))
+        cppfile (ctypes.CDLL): C++ library (result of ct.cdll.LoadLibrary('cppfile.dll'))
         filename (str): path to .dll file (no .dll extension!).
         do_print (bool,optional): print if successfull    
         do_remove (bool,optional): remove dll file after delinking
@@ -222,70 +226,90 @@ def delink(cppfile,filename,do_print=True,do_remove=True):
 # struct #
 ##########
 
-def get_fields(nblist):
-    """ construct ctypes list of fields from list of fields for python class
+def get_fields(pythonobj):
+    """ construct ctypes list of fields from pythonobj
     
-    Accepted numba types are [int32,int32[:],double,double[:],boolean].
-
     Args:
     
-        nblist (list): list of fields with elements (name,numba type).
+        pythonobj: e.g. class, SimpleNamespace or namedtuple
 
     Returns:
     
         ctlist (list): list of fields with elements (name,ctypes type) 
-        cttxt (str): string with content of cpp struct
+        cttxt (str): string with content of C++ struct
 
     """
 
     ctlist = []
     cttxt = ''
-    for nbelem in nblist:
-        if nbelem[1] == nb.int32:
-            ctlist.append((nbelem[0],ct.c_long))
-            cttxt += f' int {nbelem[0]};\n'
-        elif nbelem[1] == nb.int64:
-            ctlist.append((nbelem[0],ct.c_long))
-            cttxt += f' int {nbelem[0]};\n'            
-        elif nbelem[1] == nb.double:
-            ctlist.append((nbelem[0],ct.c_double))          
-            cttxt += f' double {nbelem[0]};\n'
-        elif nbelem[1] == nb.boolean:
-            ctlist.append((nbelem[0],ct.c_bool))
-            cttxt += f' bool {nbelem[0]};\n'
-        elif nbelem[1].dtype == nb.int32:
-            ctlist.append((nbelem[0],ct.POINTER(ct.c_long)))               
-            cttxt += f' int *{nbelem[0]};\n'
-        elif nbelem[1].dtype == nb.int64:
-            ctlist.append((nbelem[0],ct.POINTER(ct.c_long)))               
-            cttxt += f' int *{nbelem[0]};\n'            
-        elif nbelem[1].dtype == nb.double:
-            ctlist.append((nbelem[0],ct.POINTER(ct.c_double)))
-            cttxt += f' double *{nbelem[0]};\n'
+
+    for key,val in pythonobj.__dict__.items():
+
+        # a. scalars
+        if np.isscalar(val):
+
+            if type(val) is str:
+
+                ctlist.append((key,ct.POINTER(ct.c_char_p)))
+                cttxt += f' char *{key};\n' 
+
+            elif type(val) is np.int:
+        
+                ctlist.append((key,ct.c_long))
+                cttxt += f' int {key};\n'
+        
+            elif type(val) is np.float:
+            
+                ctlist.append((key,ct.c_double))          
+                cttxt += f' double {key};\n'
+
+            elif type(val) == np.bool:
+        
+                ctlist.append((key,ct.c_bool))
+                cttxt += f' bool {key};\n'
+            
+            else:
+
+                raise ValueError(f'unknown scalar type for {key}')
+        
+        # b. arrays
         else:
-            raise ValueError(f'unknown type for {nbelem[0]}')
+            
+            if np.issubdtype(val.dtype,np.int32) or np.issubdtype(val.dtype,np.int64):
+
+                ctlist.append((key,ct.POINTER(ct.c_long)))               
+                cttxt += f' int *{key};\n'
+                  
+            elif np.issubdtype(val.dtype,np.double):
+            
+                ctlist.append((key,ct.POINTER(ct.c_double)))
+                cttxt += f' double *{key};\n'
+
+            else:
+                
+                raise ValueError(f'unknown type for {key}')
     
     return ctlist,cttxt
 
-def setup_struct(nblist,structname,structfile):
-    """ create ctypes struct from list
+def setup_struct(pythonobj,structname,structfile):
+    """ create ctypes struct from setup_struct
     
-    Accepted numba types are [int32,int32[:],double,double[:],boolean]
-
     Args:
     
-        nblist (list): list of fields with elements (name,numba type).
+        pythonobj: e.g. class, SimpleNamespace or namedtuple
+        structname (str): name of C++ struct
+        strucfile (str): name of of filename for C++ struct
 
-    Write strutfile with c++ struct called structname.
+    Write strutfile with Cc++ struct called structname.
 
     Returns:
 
-        ctstruct (class): ctypes struct type with elements from nblist  
+        ctstruct (class): ctypes struct type with elements from pythonobj
 
      """
 
     # a. get fields
-    ctlist, cttxt = get_fields(nblist)
+    ctlist, cttxt = get_fields(pythonobj)
     
     # d. write cpp file with struct
     with open(structfile, 'w') as cppfile:
@@ -302,17 +326,17 @@ def setup_struct(nblist,structname,structfile):
 
     return ctstruct
 
-def get_pointers(pythonclass,ctstruct):
-    """ construct ctypes struct class with pointers from python class
+def get_pointers(pythonobj,ctstruct):
+    """ construct ctypes struct class with pointers from pythonobj
     
     Args:
     
-        pythonclass (class): python class
+        pythonobj: e.g. class, SimpleNamespace or namedtuple
         ctstruct (class): ctypes struct type
 
     Returns:
     
-        p_ctstruct (class): ctypes struct with pointers to pythonclass
+        p_ctstruct (class): ctypes struct with pointers to pythonobj
         
     """
 
@@ -321,8 +345,10 @@ def get_pointers(pythonclass,ctstruct):
     for field in ctstruct._fields_:
         
         key = field[0]                
-        val = getattr(pythonclass,key)
-        if isinstance(field[1](),ct.c_long):
+        val = getattr(pythonobj,key)
+        if isinstance(field[1](),ct.POINTER(ct.c_char_p)):
+            pass # not implemented
+        elif isinstance(field[1](),ct.c_long):
             setattr(p_ctstruct,key,val)
         elif isinstance(field[1](),ct.POINTER(ct.c_long)):
             assert np.issubdtype(val.dtype, np.int32)            
@@ -341,18 +367,18 @@ def get_pointers(pythonclass,ctstruct):
     
     return p_ctstruct
 
-def get_struct_pointer(pythonclass,ctstruct):
+def get_struct_pointer(pythonobj,ctstruct):
     """ return pointer to ctypes struct
     
     Args:
     
-        pythonclass (class): python class
+        pythonobj: e.g. class, SimpleNamespace or namedtuple
         ctstruct (class): ctypes struct type
 
     Returns:
     
-        pointer: pointer to ctypes struct with pointers to pythonclass
+        pointer: pointer to ctypes struct with pointers to pythonobj
     
     """
 
-    return ct.byref(get_pointers(pythonclass,ctstruct))
+    return ct.byref(get_pointers(pythonobj,ctstruct))

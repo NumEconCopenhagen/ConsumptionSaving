@@ -2,81 +2,68 @@
 """Model
 
 This module provides a class for consumption-saving models with methods for saving and loading
-and interfacing with C++. 
+and interfacing with numba functions C++.
+
+Modles 
 
 """
 
 import os
-import copy
+import time
 import ctypes as ct
+import copy
 import pickle
 from types import SimpleNamespace
+from collections import namedtuple
+
 import numpy as np
-import numba as nb
 
 from . import cpptools
-
-# for save/load
-def _filename(model):    
-    if model.solmethod is None:
-        return f'{model.name}'
-    else:
-        return f'{model.name}_{model.solmethod}'
-
-def _convert_to_dict(someclass,somelist):
-
-    if somelist is None:
-        return {}
-    elif len(somelist) > 0 and type(somelist[0]) is str:
-        keys = [var for var in somelist]
-    else:
-        keys = [var[0] for var in somelist]
-    values = [getattr(someclass,key) for key in keys]
-    return {key:val for key,val in zip(keys,values)}
-
-global_savelist =  ['compiler','not_float_list','parlist','sollist','simlist','vs_path','intel_path','intel_vs_version','savelist']
 
 # main
 class ModelClass():
     
-    def __init__(self,name=None,
-                      solmethod=None,
-                      load=False,
-                      compiler='vs',**kwargs):
-        
+    def __init__(self,name=None,load=False,**kwargs):
         """ defines default attributes """
 
-        if name is None: raise Exception('name must be specified') 
+        # a. name
+        if name is None: raise Exception('name must be specified')
+        self.name = name
 
-        # a. basic information
-        self.name = name # name of parametrization
-        self.solmethod = solmethod # solution methods
-        self.compiler = compiler # compiler
+        # b. C++ information
+        self.cppinfo = {}
+        self.cppinfo['compiler'] = 'vs'
+        self.cppinfo['vs_path'] = 'C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary/Build/'
+        self.cppinfo['intel_path'] = 'C:/Program Files (x86)/IntelSWTools/compilers_and_libraries_2018.5.274/windows/bin/'
+        self.cppinfo['intel_vs_version'] = 'vs2017'
 
-        # b. basic data structre
-        self.par = SimpleNamespace()
-        self.sol = SimpleNamespace()
-        self.sim = SimpleNamespace()        
+        # c. new or load
+        if not load: # new
 
-        # c. compiler information
-        self.vs_path = 'C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary/Build/'
-        self.intel_path = 'C:/Program Files (x86)/IntelSWTools/compilers_and_libraries_2018.5.274/windows/bin/'
-        self.intel_vs_version = 'vs2017'
+            # i. empty lists
+            self.not_float_list = []
+            self.savelist = []
 
-        # d. misc
-        self.not_float_list = None
-        self.savelist = []
+            # ii. create par, sol and sim 
+            self.par = SimpleNamespace()
+            self.sol = SimpleNamespace()
+            self.sim = SimpleNamespace()      
 
-        # e. setup (including type inference)
-        self.setup()
-        for key,val in kwargs.items(): setattr(self.par,key,val)
-        self.allocate()
-        self.setup_subclasses()
+            # ii. set independent variables in par, sol and sim
+            self.setup() # baseline
+            for key,val in kwargs.items(): setattr(self.par,key,val)
+            
+            # iii. set independent variables in par, sol and sim
+            self.allocate()
 
-        # f. load
-        if load: 
+        else: # load
+
             self.load()
             for key,val in kwargs.items(): setattr(self.par,key,val)
+
+        # d. infrastructure
+        self.setup_infrastructure()
+        self.update_jit()
 
     def setup(self):
         """ set independent variables in par, sol and sim """
@@ -84,211 +71,169 @@ class ModelClass():
         raise Exception('The model must have defined an .setup() method')
 
     def allocate(self):
-        """ set dependent variables in par, sol and sim """
+        """ set independent variables in par, sol and sim """
 
         raise Exception('The model must have defined an .allocate() method')
 
-    def setup_subclasses(self):
-        """ setup jitted subclasses par, sol and sim with automatic type inference """
+    ####################
+    ## infrastructure ##
+    ####################
 
+    def setup_infrastructure(self):
+        """ setup infrastructure to call numba jit functions and C++ functions """
+        
         # a. convert to dictionaries
         par_dict = self.par.__dict__
         sol_dict = self.sol.__dict__
         sim_dict = self.sim.__dict__
-        
-        # b. infer types
+
+        # b. type check
+        if self.not_float_list is None: raise Exception('The model must have a par.not_float_list = []')
+
         def check(key,val):
 
-            assert np.isscalar(val) or type(val) is np.ndarray, f'{key} is not scalar or numpy array'
-            if self.not_float_list is None: raise Exception('The model must have a par.not_float_list = []')
-            if np.isscalar(val):
-                assert type(val) is np.float or key in self.not_float_list, f'{key} is {type(val)}, not float, but not on the list'
+            scalar_or_ndarray = np.isscalar(val) or type(val) is np.ndarray
+            assert scalar_or_ndarray, f'{key} is not scalar or numpy array'
+            
+            listed_non_float = not np.isscalar(val) or type(val) is str or type(val) is np.float or key in self.not_float_list
+            assert listed_non_float, f'{key} is {type(val)}, not float, but not on the list'
 
-            return val
+        for key,val in par_dict.items(): check(key,val)
+        for key,val in sol_dict.items(): check(key,val)
+        for key,val in sim_dict.items(): check(key,val)
 
-        parlist = [(key,nb.typeof(check(key,val))) for key,val in par_dict.items()]
-        sollist = [(key,nb.typeof(check(key,val))) for key,val in sol_dict.items()]
-        simlist = [(key,nb.typeof(check(key,val))) for key,val in sim_dict.items()]
+        # c. namedtuple (definitions)
+        self.ParClass = namedtuple(f'ParClass',[key for key in par_dict.keys()])
+        self.SolClass = namedtuple(f'SolClass',[key for key in sol_dict.keys()])        
+        self.SimClass = namedtuple(f'SimClass',[key for key in sim_dict.keys()])        
 
-        # c. create subclasses
-        self.par,self.sol,self.sim = self.create_subclasses(parlist,sollist,simlist)
+    def update_jit(self):
+        """ update values and references in par_jit, sol_jit, sim_jit """
 
-        # d. set values
-        for key,val in par_dict.items(): setattr(self.par,key,val)
-        for key,val in sol_dict.items(): setattr(self.sol,key,val)
-        for key,val in sim_dict.items(): setattr(self.sim,key,val)
+        self.par_jit = self.ParClass(**self.par.__dict__)
+        self.sol_jit = self.SolClass(**self.sol.__dict__)
+        self.sim_jit = self.SimClass(**self.sim.__dict__)
 
-    def create_subclasses(self,parlist,sollist,simlist):
-        """ create jitted subclasses par, sol, sim
-
-        Args:
-
-            parlist (list): list of parameters, grids etc. with elements (name, numba type)
-            sollist (list): list of solution variables with elements (name, numba type)
-            simlist (list): list of simulation variables with elements (name, numba type)
-        
-        Returns:
-
-            par (class): class with parameters, grids etc.
-            sol (class): class with solution variables
-            sim (class): class with simulation variables
-
-        """
-    
-        self.parlist = parlist
-        self.sollist = sollist
-        self.simlist = simlist
-
-        @nb.jitclass(self.parlist) # numba class with variables in parlist
-        class ParClass():
-            def __init__(self):
-                pass
-
-        @nb.jitclass(self.sollist) # numba jit class with variables in sollist
-        class SolClass():
-            def __init__(self):
-                pass
-
-        @nb.jitclass(self.simlist) # numba jit class with variables in simlist
-        class SimClass():
-            def __init__(self):
-                pass
-
-        return ParClass(),SolClass(),SimClass()
-
-    def get_par_dict(self):
-        """ get dictionary for the par subclass """
-        
-        return _convert_to_dict(self.par,self.parlist)
-
-    def get_sol_dict(self):
-        """ get dictionary for the sol subclass """
-        
-        return _convert_to_dict(self.sol,self.sollist)
-
-    def get_sim_dict(self):
-        """ get dictionary for the sim subclass """
-        
-        return _convert_to_dict(self.sim,self.simlist)
+    ####################
+    ## save-copy-load ##
+    ####################
 
     def save(self,drop_sol=False,drop_sim=False):
-        """ save the model parameters, the solution simulation variables """
+        """ save the model parameters, the solution simulation variables (in /data) """
         
         if not os.path.exists('data'):
             os.makedirs('data')
 
         # a. save parameters
-        par_dict = _convert_to_dict(self.par,self.parlist)
-        with open(f'data/{_filename(self)}_par.p', 'wb') as f:
-            pickle.dump(par_dict, f)
+        with open(f'data/{self.name}_par.p', 'wb') as f:
+            pickle.dump(self.par, f)
 
         # b. solution
         if drop_sol:
             sol_dict = {}
         else:
-            sol_dict = _convert_to_dict(self.sol,self.sollist)
-        np.savez(f'data/{_filename(self)}_sol.npz', **sol_dict)
+            sol_dict = self.sol.__dict__
+        np.savez(f'data/{self.name}_sol.npz', **sol_dict)
     
         # c. simulation
         if drop_sim:
             sim_dict = {}
         else:        
-            sim_dict = _convert_to_dict(self.sim,self.simlist)
-        np.savez(f'data/{_filename(self)}_sim.npz', **sim_dict)
+            sim_dict = self.sim.__dict__
+        np.savez(f'data/{self.name}_sim.npz', **sim_dict)
 
         # d. additional
-        for x in global_savelist: 
-            if not hasattr(self,x): setattr(self,x,None)
-            
-        additional_dict = _convert_to_dict(self,self.savelist + global_savelist)
-        with open(f'data/{_filename(self)}.p', 'wb') as f:
-            pickle.dump(additional_dict, f)        
+        internal_savelist = [key for key in ['cppinfo','not_float_list','savelist'] if hasattr(self,key)]
+        savelist = self.savelist + internal_savelist
+        savelist_dict = {key:getattr(self,key) for key in savelist}
+        with open(f'data/{self.name}.p', 'wb') as f:
+            pickle.dump(savelist_dict, f)     
 
     def copy(self,name=None,**kwargs):
         """ copy the model parameters, the solution simulation variables """
         
         if name is None: name = f'{self.name}_copy' # if not
-        other = self.__class__(name=name,solmethod=self.solmethod,compiler=self.compiler)
+        other = self.__class__(name=name)
 
-        # a. save parameters
-        par_dict = _convert_to_dict(self.par,self.parlist)
-        for key,val in par_dict.items():
+        # a. parameters
+        for key,val in self.par.__dict__.items():
             setattr(other.par,key,copy.copy(val))
 
         # b. solution
-        sol_dict = _convert_to_dict(self.sol,self.sollist)
-        for key,val in sol_dict.items():
+        for key,val in self.sol.__dict__.items():
             setattr(other.sol,key,copy.copy(val))
     
         # c. simulation
-        sim_dict = _convert_to_dict(self.sim,self.simlist)
-        for key,val in sim_dict.items():
+        for key,val in self.sim.__dict__.items():
             setattr(other.sim,key,copy.copy(val))
 
-        # d. additional
-        for x in global_savelist: 
-            if not hasattr(self,x): setattr(self,x,None)
-
-        for key in self.savelist + global_savelist:
+        # d. savelist
+        internal_savelist = [key for key in ['cppinfo','not_float_list','savelist'] if hasattr(self,key)]
+        savelist = self.savelist + internal_savelist
+        for key in savelist:
             setattr(other,key,copy.deepcopy(getattr(self,key)))
 
         # e. update
-        for key,val in kwargs.items():
-            setattr(other.par,key,val) # like par.key = val
+        for key,val in kwargs.items(): setattr(other.par,key,val)
 
         return other
 
     def load(self):
-        """ load the model parameters and solution and simulation variables"""
+        """ load par, sol, sim and anything in .savelist """
 
         # a. parameters
-        with open(f'data/{_filename(self)}_par.p', 'rb') as f:
-            par_dict = pickle.load(f)
-        for key,val in par_dict.items():
-            setattr(self.par,key,val)
+        with open(f'data/{self.name}_par.p', 'rb') as f:
+            self.par = pickle.load(f)
 
         # b. solution
-        with np.load(f'data/{_filename(self)}_sol.npz') as data:
+        self.sol = SimpleNamespace()
+        with np.load(f'data/{self.name}_sol.npz') as data:
             for key in data.files:
                 setattr(self.sol,key,data[key])
 
-        # c. solution
-        with np.load(f'data/{_filename(self)}_sim.npz') as data:
+        # c. simulation
+        self.sim = SimpleNamespace()            
+        with np.load(f'data/{self.name}_sim.npz') as data:
             for key in data.files:
                 setattr(self.sim,key,data[key])
 
         # d. additional
-        filesavelist = f'data/{_filename(self)}.p'
+        filesavelist = f'data/{self.name}.p'
         if os.path.isfile(filesavelist):
+            
             with open(filesavelist, 'rb') as f:
-                additional_dict = pickle.load(f)
-            for key,val in additional_dict.items():
+                savelist_dict = pickle.load(f)
+
+            for key,val in savelist_dict.items():
                 setattr(self,key,val)
+
+    ##########
+    ## print #
+    ##########
 
     def __str__(self):
         """ called when model is printed """ 
         
-        def print_list(class_,list_):
+        def print_items(sn):
+            """ print items in SimpleNamespace """
 
             description = ''
-
-            keys = [var[0] for var in list_]
-            values = [getattr(class_,key) for key in keys]
-
             nbytes = 0
-            for var,val in zip(list_,values):    
-                if np.isscalar(val) and not var[1] == nb.boolean:
-                    description += f' {var[0]} = {val} [{var[1]}]\n'
-                elif var[1] == nb.boolean:
+
+            for key,val in sn.__dict__.items():
+
+                if np.isscalar(val) and not type(val) is np.bool:
+                    description += f' {key} = {val} [{type(val).__name__}]\n'
+                elif type(val) is np.bool:
                     if val:
-                        description += f' {var[0]} = True\n'
+                        description += f' {key} = True\n'
                     else:
-                        description += f' {var[0]} = False\n'
-                elif type(var[1]) is nb.types.npytypes.Array:
-                    description += f' {var[0]} = {var[1]} with shape = {val.shape}\n'            
+                        description += f' {key} = False\n'
+                elif type(val) is np.ndarray:
+                    description += f' {key} = ndarray with shape = {val.shape} [dtype: {val.dtype}]\n'            
                     nbytes += val.nbytes
                 else:                
-                    description += f' {var[0]} = ?\n'
+                    description += f' {key} = ?\n'
 
             description += f'memory, gb: {nbytes/(10**9):.1f}\n' 
             return description
@@ -296,15 +241,15 @@ class ModelClass():
         description = f'Modelclass: {self.__class__.__name__}\n\n'
 
         description += 'Parameters:\n'
-        description += print_list(self.par,self.parlist)
+        description += print_items(self.par)
         description += '\n'
 
         description += 'Solution:\n'
-        description += print_list(self.sol,self.sollist)
+        description += print_items(self.sol)
         description += '\n'
 
         description += 'Simulation:\n'
-        description += print_list(self.sim,self.simlist)
+        description += print_items(self.sim)
 
         return description 
 
@@ -313,34 +258,27 @@ class ModelClass():
     #######################
     
     def setup_cpp(self,use_nlopt=False):
-        """ setup interface to cpp files 
-        
-        Args:
-
-            compiler (str,optional): compiler choice (vs or intel)
-            use_nlopt (bool,optional): use NLopt optimizer
-
-        """
+        """ setup interface to cpp files """
 
         # a. setup NLopt
-        if not os.path.isfile(f'{os.getcwd()}/libnlopt-0.dll'):
-            cpptools.setup_nlopt(vs_path=self.vs_path)
+        if use_nlopt and not os.path.isfile(f'{os.getcwd()}/libnlopt-0.dll'):
+            cpptools.setup_nlopt(vs_path=self.cppinfo['vs_path'])
             
         # b. dictionary of cppfiles
         self.cppfiles = dict()
 
-        # c. ctypes version of par and sol classes
-        self.parcpp = cpptools.setup_struct(self.parlist,'par_struct','cppfuncs//par_struct.cpp')
-        self.solcpp = cpptools.setup_struct(self.sollist,'sol_struct','cppfuncs//sol_struct.cpp')
-        self.simcpp = cpptools.setup_struct(self.simlist,'sim_struct','cppfuncs//sim_struct.cpp')
+        # c. ctypes version of par, sol and sim classes
+        self.par_cpp = cpptools.setup_struct(self.par,'par_struct','cppfuncs//par_struct.cpp')
+        self.sol_cpp = cpptools.setup_struct(self.sol,'sol_struct','cppfuncs//sol_struct.cpp')
+        self.sim_cpp = cpptools.setup_struct(self.sim,'sim_struct','cppfuncs//sim_struct.cpp')
 
-    def link_cpp(self,filename,funcnames,do_compile=True,do_print=False):
-        """ link c++ library
+    def link_cpp(self,filename,funcspecs,do_compile=True,do_print=False):
+        """ link C++ library
         
         Args:
 
             filename (str): path to .dll file (no .dll extension!)
-            funcames (list): list of function names
+            funcspecs (list): list of function names and (optionally) arguments
             do_compile (bool): compile from .cpp to .dll
             do_print (bool): print if succesfull
 
@@ -348,25 +286,36 @@ class ModelClass():
 
         use_openmp_with_vs = False
 
+        # a. compile
         if do_compile:
+
             cpptools.compile('cppfuncs//' + filename,
-                compiler=self.compiler,
-                vs_path=self.vs_path,
-                intel_path=self.intel_path, 
-                intel_vs_version=self.intel_vs_version, 
+                compiler=self.cppinfo['compiler'],
+                vs_path=self.cppinfo['vs_path'],
+                intel_path=self.cppinfo['intel_path'], 
+                intel_vs_version=self.cppinfo['intel_vs_version'], 
                 do_print=do_print)
 
-        funcs = [(name,[ct.POINTER(self.parcpp),ct.POINTER(self.solcpp),ct.POINTER(self.simcpp)]) for name in funcnames]
-        if self.compiler == 'vs': 
+        # b. function list
+        funcs = []
+        for funcspec in funcspecs:
+            if type(funcspec) == str:
+                funcs.append( (funcspec,[ct.POINTER(self.par_cpp),ct.POINTER(self.sol_cpp),ct.POINTER(self.sim_cpp)]) )
+            else:
+                funcs.append(funcspec)
+        
+        if self.cppinfo['compiler'] == 'vs': 
             funcs.append(('setup_omp',[]))
             use_openmp_with_vs = True
 
+        # c. link
         self.cppfiles[filename] = cpptools.link(filename,funcs,use_openmp_with_vs=use_openmp_with_vs,do_print=do_print)
                 
     def delink_cpp(self,filename,do_print=False,do_remove=True):
         """ delink cpp library
         
         Args:
+
             filename (str): path to .dll file (no .dll extension!).
             do_print (bool,optional): print if successfull    
             do_remove (bool,optional): remove dll file after delinking
@@ -376,7 +325,7 @@ class ModelClass():
         cpptools.delink(self.cppfiles[filename],filename,do_print=do_print,do_remove=do_remove)
 
     def call_cpp(self,filename,funcname):
-        """ call c++ function in linked c++ library
+        """ call C++ function in linked C++ library
         
         Args:
         
@@ -385,9 +334,9 @@ class ModelClass():
         
         """ 
             
-        p_par = cpptools.get_struct_pointer(self.par,self.parcpp)
-        p_sol = cpptools.get_struct_pointer(self.sol,self.solcpp)
-        p_sim = cpptools.get_struct_pointer(self.sim,self.simcpp)
+        p_par = cpptools.get_struct_pointer(self.par,self.par_cpp)
+        p_sol = cpptools.get_struct_pointer(self.sol,self.sol_cpp)
+        p_sim = cpptools.get_struct_pointer(self.sim,self.sim_cpp)
         
         funcnow = getattr(self.cppfiles[filename],funcname)
         funcnow(p_par,p_sol,p_sim)
@@ -396,8 +345,8 @@ class ModelClass():
     ## run file ##
     ##############
 
-    def write_run_file(self,filename='run.py',name='',solmethod='',method='',**kwargs):
-        """ call c++ function in linked c++ library
+    def write_run_file(self,filename='run.py',name='',method='',**kwargs):
+        """ write and run a .py file
         
         Args:
         
@@ -412,21 +361,18 @@ class ModelClass():
         modulename = self.__class__.__module__
         modelname = self.__class__.__name__
 
-        if name == '':
-            name = self.name
-
-        if solmethod == '':
-            solmethod = self.solmethod
-
-        if method == '':
-            method = 'solve'
+        if name == '': name = self.name
+        if method == '': method = 'solve'
 
         with open(f'{filename}', 'w') as txtfile:
             
             txtfile.write(f'from {modulename} import {modelname}\n')
             txtfile.write('updpar = dict()\n')
             for key,val in kwargs.items():
-                txtfile.write(f'updpar["{key}"] = {val}\n')
+                if type(val) is str:
+                    txtfile.write(f'updpar["{key}"] = "{val}"\n')
+                else:
+                    txtfile.write(f'updpar["{key}"] = {val}\n')
 
-            txtfile.write(f'model = {modelname}(name="{name}",solmethod="{solmethod}",**updpar)\n')
+            txtfile.write(f'model = {modelname}(name="{name}",**updpar)\n')
             txtfile.write(f'model.{method}()\n')
