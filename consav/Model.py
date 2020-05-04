@@ -88,8 +88,6 @@ class ModelClass():
         sim_dict = self.sim.__dict__
 
         # b. type check
-        if self.not_float_list is None: raise Exception('The model must have a par.not_float_list = []')
-
         def check(key,val):
 
             scalar_or_ndarray = np.isscalar(val) or type(val) is np.ndarray
@@ -376,3 +374,37 @@ class ModelClass():
 
             txtfile.write(f'model = {modelname}(name="{name}",**updpar)\n')
             txtfile.write(f'model.{method}()\n')
+
+# jit
+class jit(): 
+
+    def __init__(self,model): 
+        
+        self.model = model
+        self.par = model.par
+        self.sol = model.sol
+        self.sim = model.sim
+      
+    def __enter__(self): 
+
+        self.model.update_jit()
+        self.model.par = self.model.par_jit
+        self.model.sol = self.model.sol_jit
+        self.model.sim = self.model.sim_jit
+
+        return self.model
+  
+    def __exit__(self, exc_type, exc_value, tb):
+
+        if exc_type is not None:
+            traceback.print_exception(exc_type, exc_value, tb)
+
+        self.model.par = self.par
+        self.model.sol = self.sol
+        self.model.sim = self.sim
+
+        del self.model.par_jit
+        del self.model.sol_jit
+        del self.model.sim_jit
+
+        return True
