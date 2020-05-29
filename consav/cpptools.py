@@ -7,10 +7,9 @@ The compile() function takes a .cpp as input, writes a .bat file, and run it
 to compile a .dll file. The link() function loads the .dll file and defines 
 the required functions. The .dll can be unloaded with unlink().
 
-In the sub-section #struct# an interface for passing a Python class to a C++ struct 
+In the sub-section #struct# an interface for passing a Python object to a C++ struct 
 is included. The order of fields must be exactly the same in Python and C++. To 
-avoid errors a function writing the C++ struct from the Python class (with 
-type definitions from numba) is provided.
+avoid errors a function writing the C++ struct from the Python object is provided.
 
 """
 
@@ -75,6 +74,7 @@ def compile(filename,compiler='vs',
             intel_path = 'C:/Program Files (x86)/IntelSWTools/compilers_and_libraries_2018.5.274/windows/bin/',
             intel_vs_version = 'vs2017',
             nlopt_lib = 'cppfuncs/nlopt-2.4.2-dll64/libnlopt-0.lib',
+            additional_cpp = '',
             dllfilename='',do_print=True):      
     """compile cpp file to dll
 
@@ -97,22 +97,27 @@ def compile(filename,compiler='vs',
 
     # a. compile string
     if compiler == 'vs':
-        pwd_str = 'cd "' + os.getcwd() + '"\n'    
-        path_str = f'cd "{vs_path}"\n'
+        
+        pwd_str = 'cd /d "' + os.getcwd() + '"\n'    
+        path_str = f'cd /d "{vs_path}"\n'
         version_str = 'call vcvarsall.bat x64\n'
-        if use_nlopt:
-            compile_str = f'cl {nlopt_lib} /LD /EHsc /Ox /openmp {filename}.cpp\n'
-        else:
-            compile_str = f'cl /LD /EHsc /Ox /openmp {filename}.cpp\n'
+        
+        compile_str = f'cl'
+        if use_nlopt: compile_str += f' {nlopt_lib}'
+        compile_str += f' /LD /EHsc /Ox /openmp {filename}.cpp {additional_cpp}\n'
+
         lines = [path_str,version_str,pwd_str,compile_str]
+
     elif compiler == 'intel':
-        pwd_str = 'cd "' + os.getcwd() + '"\n'            
-        path_str = f'cd "{intel_path}"\n'
+        
+        pwd_str = 'cd /d "' + os.getcwd() + '"\n'            
+        path_str = f'cd /d "{intel_path}"\n'
         version_str = f'call ipsxe-comp-vars.bat intel64 {intel_vs_version}\n'
-        if use_nlopt:
-            compile_str = f'icl {nlopt_lib} /LD /O3 /arch:CORE-AVX512 /openmp {filename}.cpp\n'
-        else:
-            compile_str = f'icl /LD /O3 /arch:CORE-AVX512 /openmp {filename}.cpp\n'
+        
+        compile_str = f'icl'
+        if use_nlopt: compile_str += f' {nlopt_lib}'
+        compile_str += ' /LD /O3 /arch:CORE-AVX512 /openmp {filename}.cpp {additional_cpp}\n'
+
         lines = [path_str,version_str,pwd_str,compile_str]
         
     # b. write .bat
@@ -263,27 +268,32 @@ def get_fields(pythonobj):
                 ctlist.append((key,ct.c_double))          
                 cttxt += f' double {key};\n'
 
-            elif type(val) == np.bool:
+            elif type(val) is np.bool:
         
                 ctlist.append((key,ct.c_bool))
                 cttxt += f' bool {key};\n'
             
             else:
 
-                raise ValueError(f'unknown scalar type for {key}')
+                raise ValueError(f'unknown scalar type for {key}, type is {type(val)}')
         
         # b. arrays
         else:
             
-            if np.issubdtype(val.dtype,np.int32) or np.issubdtype(val.dtype,np.int64):
+            if val.dtype == np.int_:
 
                 ctlist.append((key,ct.POINTER(ct.c_long)))               
                 cttxt += f' int *{key};\n'
-                  
-            elif np.issubdtype(val.dtype,np.double):
+                     
+            elif val.dtype == np.float_:
             
                 ctlist.append((key,ct.POINTER(ct.c_double)))
                 cttxt += f' double *{key};\n'
+
+            elif val.dtype == np.bool_:
+            
+                ctlist.append((key,ct.POINTER(ct.c_bool)))
+                cttxt += f' bool *{key};\n'
 
             else:
                 
@@ -346,22 +356,31 @@ def get_pointers(pythonobj,ctstruct):
         
         key = field[0]                
         val = getattr(pythonobj,key)
+
         if isinstance(field[1](),ct.POINTER(ct.c_char_p)):
             pass # not implemented
+        
         elif isinstance(field[1](),ct.c_long):
             setattr(p_ctstruct,key,val)
         elif isinstance(field[1](),ct.POINTER(ct.c_long)):
-            assert np.issubdtype(val.dtype, np.int32)            
+            assert np.issubdtype(val.dtype, np.int_)
             setattr(p_ctstruct,key,np.ctypeslib.as_ctypes(val.ravel()[0:1])) 
             # why [0:1]? hack to avoid bug for arrays with more elements than highest int32
+
         elif isinstance(field[1](),ct.c_double):
             setattr(p_ctstruct,key,val)            
         elif isinstance(field[1](),ct.POINTER(ct.c_double)):
-            assert np.issubdtype(val.dtype, np.double)
+            assert np.issubdtype(val.dtype, np.float_)
             setattr(p_ctstruct,key,np.ctypeslib.as_ctypes(val.ravel()[0:1]))
             # why [0:1]? hack to avoid bug for arrays with more elements than highest int32
+        
         elif isinstance(field[1](),ct.c_bool):
             setattr(p_ctstruct,key,val)
+        elif isinstance(field[1](),ct.POINTER(ct.c_bool)):
+            assert np.issubdtype(val.dtype, np.bool_)
+            setattr(p_ctstruct,key,np.ctypeslib.as_ctypes(val.ravel()[0:1]))
+            # why [0:1]? hack to avoid bug for arrays with more elements than highest int32            
+        
         else:
             raise ValueError(f'no such type, variable {key}')
     
