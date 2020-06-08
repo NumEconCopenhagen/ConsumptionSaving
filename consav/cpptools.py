@@ -22,7 +22,7 @@ import numpy as np
 
 import os, zipfile
 
-def setup_nlopt(vs_path = 'C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary/Build/'):
+def setup_nlopt(vs_path = 'C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary/Build/',download=True,do_print=True):
     """download and setup nlopt
 
     Args:
@@ -32,14 +32,16 @@ def setup_nlopt(vs_path = 'C:/Program Files (x86)/Microsoft Visual Studio/2017/C
     """
 
     # a. download
-    url = 'http://ab-initio.mit.edu/nlopt/nlopt-2.4.2-dll64.zip'
-    nloptzip = f'{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64.zip'
-    urllib.request.urlretrieve(url, nloptzip)
+    if download:
+        url = 'http://ab-initio.mit.edu/nlopt/nlopt-2.4.2-dll64.zip'
+        nloptzip = f'{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64.zip'
+        urllib.request.urlretrieve(url, nloptzip)
 
     # b. unzip
-    filename = os.path.abspath(f'{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64.zip') 
-    with zipfile.ZipFile(filename) as file:
-        file.extractall(f'{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64/')
+    if download:
+        filename = os.path.abspath(f'{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64.zip') 
+        with zipfile.ZipFile(filename) as file:
+            file.extractall(f'{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64/')
 
     # c. setup string
     pwd_str = f'cd "{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64/"\n'    
@@ -55,7 +57,7 @@ def setup_nlopt(vs_path = 'C:/Program Files (x86)/Microsoft Visual Studio/2017/C
     # e. call .bat
     result = os.system('compile.bat')
     if result == 0:
-        print('nlopt setup done')
+        if do_print: print('nlopt setup done')
     else: 
         raise ValueError('nlopt setup failed')
     os.remove('compile.bat')
@@ -67,7 +69,7 @@ def setup_nlopt(vs_path = 'C:/Program Files (x86)/Microsoft Visual Studio/2017/C
     os.rename(f'{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64/libnlopt-0.dll',dst)
 
     # g. remove zip file
-    os.remove(nloptzip) 
+    if download: os.remove(nloptzip) 
 
 def compile(filename,compiler='vs',
             vs_path = 'C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary/Build/',
@@ -301,7 +303,7 @@ def get_fields(pythonobj):
     
     return ctlist,cttxt
 
-def setup_struct(pythonobj,structname,structfile):
+def setup_struct(pythonobj,structname=None,structfile=None):
     """ create ctypes struct from setup_struct
     
     Args:
@@ -322,13 +324,17 @@ def setup_struct(pythonobj,structname,structfile):
     ctlist, cttxt = get_fields(pythonobj)
     
     # d. write cpp file with struct
-    with open(structfile, 'w') as cppfile:
+    if structname is None: assert structfile is None
+    if structfile is None: assert structname is None
+    if not structname is None:
+        
+        with open(structfile, 'w') as cppfile:
 
-        cppfile.write(f'typedef struct {structname}\n') 
-        cppfile.write('{\n')
-        cppfile.write(cttxt)
-        cppfile.write('}')
-        cppfile.write(f' {structname};\n\n')
+            cppfile.write(f'typedef struct {structname}\n') 
+            cppfile.write('{\n')
+            cppfile.write(cttxt)
+            cppfile.write('}')
+            cppfile.write(f' {structname};\n\n')
 
     # c. ctypes struct
     class ctstruct(ct.Structure):
