@@ -22,7 +22,19 @@ import numpy as np
 
 import os, zipfile
 
-def setup_nlopt(vs_path = 'C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary/Build/',download=True,do_print=True):
+def find_vs_path():
+
+    paths = [   
+        'C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/VC/Auxiliary/Build/',
+        'C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary/Build/'
+    ]
+
+    for path in paths:
+        if os.path.isdir(path): return path
+
+    raise Exception('no Visual Studio installation found')
+
+def setup_nlopt(vs_path=None,download=True,do_print=True):
     """download and setup nlopt
 
     Args:
@@ -30,6 +42,8 @@ def setup_nlopt(vs_path = 'C:/Program Files (x86)/Microsoft Visual Studio/2017/C
         vs_path (str,optional): path to vs compiler
 
     """
+
+    vs_path = vs_path if not vs_path is None else find_vs_path()
 
     # a. download
     if download:
@@ -72,7 +86,7 @@ def setup_nlopt(vs_path = 'C:/Program Files (x86)/Microsoft Visual Studio/2017/C
     if download: os.remove(nloptzip) 
 
 def compile(filename,compiler='vs',
-            vs_path = 'C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary/Build/',
+            vs_path = None,
             intel_path = 'C:/Program Files (x86)/IntelSWTools/compilers_and_libraries_2018.5.274/windows/bin/',
             intel_vs_version = 'vs2017',
             nlopt_lib = 'cppfuncs/nlopt-2.4.2-dll64/libnlopt-0.lib',
@@ -91,6 +105,9 @@ def compile(filename,compiler='vs',
         do_print (bool,optional): print if succesfull
 
     """
+
+    if compiler == 'vs':
+        vs_path = vs_path if not vs_path is None else find_vs_path()
 
     if os.path.isfile(nlopt_lib):
         use_nlopt = True
