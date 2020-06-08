@@ -44,8 +44,8 @@ def setup_nlopt(vs_path = 'C:/Program Files (x86)/Microsoft Visual Studio/2017/C
             file.extractall(f'{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64/')
 
     # c. setup string
-    pwd_str = f'cd "{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64/"\n'    
-    path_str = f'cd "{vs_path}"\n'
+    pwd_str = f'cd /d "{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64/"\n'    
+    path_str = f'cd /d "{vs_path}"\n'
     version_str = 'call vcvarsall.bat x64\n'
     setup_str = 'lib /def:libnlopt-0.def /machine:x64'
     
