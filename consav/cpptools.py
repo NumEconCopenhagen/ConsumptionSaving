@@ -185,11 +185,14 @@ def link(filename,funcs,use_openmp_with_vs=False,do_print=True,
 
     # a. link
     if os.path.isfile(nlopt_lib):
-        cppfile = ct.cdll.LoadLibrary(f'{os.getcwd()}/libnlopt-0.dll')
+        nloptfile = ct.cdll.LoadLibrary(f'{os.getcwd()}/libnlopt-0.dll')
 
     cppfile = ct.cdll.LoadLibrary(f'{os.getcwd()}/{filename}.dll')
     if do_print:
         print('cpp files loaded')
+
+    if os.path.isfile(nlopt_lib):
+        delink(nloptfile,do_print=False,do_remove=False)
     
     # b. functions
     set_argtypes(cppfile,funcs)
@@ -201,7 +204,7 @@ def link(filename,funcs,use_openmp_with_vs=False,do_print=True,
 
     return cppfile
 
-def delink(cppfile,filename,do_print=True,do_remove=True):
+def delink(cppfile,filename=None,do_print=True,do_remove=True):
     """ delink cpp library
         
     Args:
