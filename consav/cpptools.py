@@ -98,7 +98,7 @@ def compile(filename,compiler='vs',
 
         filename (str): path to .cpp file (no .cpp extensions!)
         compiler (str,optional): compiler choice (vs or intel)
-        vs_path (str,optional): path to vs compiler
+        vs_path (str,optional): path to vs compiler (if None then newest version found used)
         intel_path (str,optional): path to intel compiler
         intel_vs_version (str,optional): vs version used by intel compiler
         dllfilename (str,optional): filename of resulting dll file 
