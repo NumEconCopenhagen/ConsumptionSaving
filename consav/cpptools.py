@@ -135,7 +135,7 @@ def compile(filename,compiler='vs',
         
         compile_str = f'icl'
         if use_nlopt: compile_str += f' {nlopt_lib}'
-        compile_str += ' /LD /O3 /arch:CORE-AVX512 /openmp {filename}.cpp {additional_cpp}\n'
+        compile_str += f' /LD  /EHsc /O3 /arch:CORE-AVX512 /openmp {filename}.cpp {additional_cpp}\n'
 
         lines = [path_str,version_str,pwd_str,compile_str]
         
