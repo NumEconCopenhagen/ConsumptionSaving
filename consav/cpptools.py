@@ -34,7 +34,7 @@ def find_vs_path():
 
     raise Exception('no Visual Studio installation found')
 
-def setup_nlopt(vs_path=None,download=True,do_print=True):
+def setup_nlopt(vs_path=None,download=True,nloptfolder='cppfuncs',do_print=True):
     """download and setup nlopt
 
     Args:
@@ -48,17 +48,17 @@ def setup_nlopt(vs_path=None,download=True,do_print=True):
     # a. download
     if download:
         url = 'http://ab-initio.mit.edu/nlopt/nlopt-2.4.2-dll64.zip'
-        nloptzip = f'{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64.zip'
+        nloptzip = f'{os.getcwd()}/{nloptfolder}/nlopt-2.4.2-dll64.zip'
         urllib.request.urlretrieve(url, nloptzip)
 
     # b. unzip
     if download:
-        filename = os.path.abspath(f'{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64.zip') 
+        filename = os.path.abspath(f'{os.getcwd()}/{nloptfolder}/nlopt-2.4.2-dll64.zip') 
         with zipfile.ZipFile(filename) as file:
-            file.extractall(f'{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64/')
+            file.extractall(f'{os.getcwd()}/{nloptfolder}/nlopt-2.4.2-dll64/')
 
     # c. setup string
-    pwd_str = f'cd /d "{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64/"\n'    
+    pwd_str = f'cd /d "{os.getcwd()}/{nloptfolder}/nlopt-2.4.2-dll64/"\n'    
     path_str = f'cd /d "{vs_path}"\n'
     version_str = 'call vcvarsall.bat x64\n'
     setup_str = 'lib /def:libnlopt-0.def /machine:x64'
@@ -80,7 +80,7 @@ def setup_nlopt(vs_path=None,download=True,do_print=True):
     dst = f'{os.getcwd()}/libnlopt-0.dll'
     if os.path.isfile(dst):
         os.remove(dst)
-    os.rename(f'{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64/libnlopt-0.dll',dst)
+    os.rename(f'{os.getcwd()}/{nloptfolder}/nlopt-2.4.2-dll64/libnlopt-0.dll',dst)
 
     # g. remove zip file
     if download: os.remove(nloptzip) 
