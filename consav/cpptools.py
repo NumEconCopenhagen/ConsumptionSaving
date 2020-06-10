@@ -7,8 +7,8 @@ The compile() function takes a .cpp as input, writes a .bat file, and run it
 to compile a .dll file. The link() function loads the .dll file and defines 
 the required functions. The .dll can be unloaded with unlink().
 
-In the sub-section #struct# an interface for passing a Python object to a C++ struct 
-is included. The order of fields must be exactly the same in Python and C++. To 
+In the sub-section #struct# an interface for passing a Python object (e.g. dict or SimpleNamespace) 
+to a C++ struct is included. The order of fields must be exactly the same in Python and C++. To 
 avoid errors a function writing the C++ struct from the Python object is provided.
 
 """
@@ -23,6 +23,7 @@ import numpy as np
 import os, zipfile
 
 def find_vs_path():
+    """ find path to visual studio """
 
     paths = [   
         'C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/VC/Auxiliary/Build/',
@@ -40,6 +41,9 @@ def setup_nlopt(vs_path=None,download=True,nloptfolder='cppfuncs',do_print=True)
     Args:
 
         vs_path (str,optional): path to vs compiler
+        download (bool,optional): download nlopt
+        nloptfolder (str,optional): foldername
+        do_print (bool,optional): print status
 
     """
 
@@ -85,12 +89,14 @@ def setup_nlopt(vs_path=None,download=True,nloptfolder='cppfuncs',do_print=True)
     # g. remove zip file
     if download: os.remove(nloptzip) 
 
-def compile(filename,compiler='vs',
+def compile(filename,
+            compiler='vs',
             vs_path = None,
             intel_path = 'C:/Program Files (x86)/IntelSWTools/compilers_and_libraries_2018.5.274/windows/bin/',
             intel_vs_version = 'vs2017',
             nlopt_lib = 'cppfuncs/nlopt-2.4.2-dll64/libnlopt-0.lib',
             additional_cpp = '',
+            macros=None,
             dllfilename='',do_print=True):      
     """compile cpp file to dll
 
@@ -101,7 +107,10 @@ def compile(filename,compiler='vs',
         vs_path (str,optional): path to vs compiler (if None then newest version found used)
         intel_path (str,optional): path to intel compiler
         intel_vs_version (str,optional): vs version used by intel compiler
-        dllfilename (str,optional): filename of resulting dll file 
+        nlopt_lib (str,optional): path to nlopt library
+        additional_cpp (str,optional): additional cpp files to include
+        dllfilename (str,optional): filename of resulting dll file
+        macros (dict/list,optional): preprocessor macros
         do_print (bool,optional): print if succesfull
 
     """
@@ -123,7 +132,17 @@ def compile(filename,compiler='vs',
         
         compile_str = f'cl'
         if use_nlopt: compile_str += f' {nlopt_lib}'
-        compile_str += f' /LD /EHsc /Ox /openmp {filename}.cpp {additional_cpp}\n'
+        compile_str += f' /LD /EHsc /Ox /openmp {filename}.cpp {additional_cpp}'
+        if not macros is None:
+            if type(macros) is dict:
+                for k,v in macros.items():
+                    if v is None:
+                        compile_str += f' /D{k}'
+                    else:
+                        compile_str += f' /D{k}={v}'
+            elif type(macros) is list:
+                for k in macros: compile_str += f' /D{k}'
+        compile_str += '\n'
 
         lines = [path_str,version_str,pwd_str,compile_str]
 
@@ -135,8 +154,18 @@ def compile(filename,compiler='vs',
         
         compile_str = f'icl'
         if use_nlopt: compile_str += f' {nlopt_lib}'
-        compile_str += f' /LD  /EHsc /O3 /arch:CORE-AVX512 /openmp {filename}.cpp {additional_cpp}\n'
-
+        compile_str += ' /LD /EHsc /O3 /arch:CORE-AVX512 /openmp {filename}.cpp {additional_cpp}'
+        if not macros is None:
+            if type(macros) is dict:
+                for k,v in macros.items():
+                    if v is None:
+                        compile_str += f' /D{k}'
+                    else:
+                        compile_str += f' /D{k}={v}'
+            elif type(macros) is list:
+                for k in macros: compile_str += f' /D{k}'
+        compile_str += '\n'
+                    
         lines = [path_str,version_str,pwd_str,compile_str]
         
     # b. write .bat
@@ -147,9 +176,9 @@ def compile(filename,compiler='vs',
     result = os.system('compile.bat')
     if result == 0:
         if do_print:
-            print('cpp files compiled')
+            print('C++ files compiled')
     else: 
-        raise ValueError('cpp files can not be compiled')
+        raise ValueError('C++ files can not be compiled')
 
     # d. rename dll
     filename_raw = os.path.splitext(os.path.basename(filename))[0]
@@ -183,16 +212,18 @@ def set_argtypes(cppfile,funcs):
         funcnow.restype = None
         funcnow.argtypes = argtypes
 
-def link(filename,funcs,use_openmp_with_vs=False,do_print=True,
-         nlopt_lib = 'cppfuncs/nlopt-2.4.2-dll64/libnlopt-0.lib'): 
+def link(filename,funcs,use_openmp_with_vs=False,
+         nlopt_lib = 'cppfuncs/nlopt-2.4.2-dll64/libnlopt-0.lib',
+         do_print=True): 
     """ link cpp library
         
     Args:
 
         filename (str): path to .dll file (no .dll extension!)
         funcs (list): list of functions with elements (functionname,[argtype1,argtype2,etc.])
-        use_openmp_with_vs (bool,optional): use openmp with vs as sompiler
-        do_print (str,optional): print if successfull
+        use_openmp_with_vs (bool,optional): use openmp with vs as sompiler        
+        nlopt_lib (str,optional): path to nlopt library
+        do_print (str,optional): print if successfull        
 
     Return:
     
@@ -206,7 +237,7 @@ def link(filename,funcs,use_openmp_with_vs=False,do_print=True,
 
     cppfile = ct.cdll.LoadLibrary(f'{os.getcwd()}/{filename}.dll')
     if do_print:
-        print('cpp files loaded')
+        print('C++ files loaded')
     
     # b. functions
     set_argtypes(cppfile,funcs)
@@ -243,7 +274,7 @@ def delink(cppfile,filename=None,do_print=True,do_remove=True):
     ct.windll.kernel32.FreeLibrary.argtypes = [ct.wintypes.HMODULE]
     ct.windll.kernel32.FreeLibrary(handle)
     if do_print:
-        print('cpp files delinked')
+        print('C++ files delinked')
 
     # d. remove dll file
     if do_remove:
