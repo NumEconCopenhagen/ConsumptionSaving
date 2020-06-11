@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""newton_raphson
+"""misc
 
 This module provides misc functions.
 """

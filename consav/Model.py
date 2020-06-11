@@ -9,6 +9,7 @@ Modles
 """
 
 import os
+import traceback
 import time
 import ctypes as ct
 import copy
@@ -375,7 +376,9 @@ class ModelClass():
             txtfile.write(f'model = {modelname}(name="{name}",**updpar)\n')
             txtfile.write(f'model.{method}()\n')
 
-# jit
+#######
+# jit #
+#######
 class jit(): 
 
     def __init__(self,model): 
