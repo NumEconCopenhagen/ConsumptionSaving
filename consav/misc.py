@@ -58,8 +58,8 @@ def nonlinspace(x_min, x_max, n, phi):
 
     Args:
 
-        x_min (double): maximum value
-        x_max (double): minimum value
+        x_min (double): minimum value
+        x_max (double): maximum value
         n (int): number of points
         phi (double): phi = 1 -> eqaul spacing, phi up -> more points closer to minimum
     
