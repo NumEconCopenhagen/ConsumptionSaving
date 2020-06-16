@@ -311,12 +311,12 @@ def get_fields(pythonobj):
                 ctlist.append((key,ct.POINTER(ct.c_char_p)))
                 cttxt += f' char *{key};\n' 
 
-            elif type(val) is np.int:
+            elif type(val) in [np.int,np.int_]:
         
                 ctlist.append((key,ct.c_long))
                 cttxt += f' int {key};\n'
         
-            elif type(val) is np.float:
+            elif type(val) in [np.float,np.float_]:
             
                 ctlist.append((key,ct.c_double))          
                 cttxt += f' double {key};\n'
@@ -328,6 +328,7 @@ def get_fields(pythonobj):
             
             else:
 
+                print(type(val) in [np.float,np.float_])
                 raise ValueError(f'unknown scalar type for {key}, type is {type(val)}')
         
         # b. arrays
