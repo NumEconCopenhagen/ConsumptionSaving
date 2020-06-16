@@ -334,7 +334,11 @@ def markov_rouwenhorst(rho,sigma,N=7):
 
     y = np.exp(s) / np.sum(ergodic * np.exp(s))
 
-    return y, trans, ergodic
+    # e. find cumsums
+    trans_cumsum = np.array([np.cumsum(trans[i, :]) for i in range(N)])
+    ergodic_cumsum = np.cumsum(ergodic)
+
+    return y, trans, ergodic, trans_cumsum, ergodic_cumsum
 
 def _find_ergodic(trans,atol=1e-13,rtol=0):
     """ find ergodic distribution from transition matrix 
