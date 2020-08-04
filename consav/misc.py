@@ -380,7 +380,7 @@ def choice(r,p_cumsum):
     """
 
     i = 0
-    while r > p_cumsum[i]:
+    while r > p_cumsum[i] and i+1 < p_cumsum.size:
         i = i + 1
 
     return i
