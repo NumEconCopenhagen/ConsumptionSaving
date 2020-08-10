@@ -139,17 +139,17 @@ class ModelClass():
         self.sollist = sollist
         self.simlist = simlist
 
-        @nb.jitclass(self.parlist) # numba class with variables in parlist
+        @nb.experimental.jitclass(self.parlist) # numba class with variables in parlist
         class ParClass():
             def __init__(self):
                 pass
 
-        @nb.jitclass(self.sollist) # numba jit class with variables in sollist
+        @nb.experimental.jitclass(self.sollist) # numba jit class with variables in sollist
         class SolClass():
             def __init__(self):
                 pass
 
-        @nb.jitclass(self.simlist) # numba jit class with variables in simlist
+        @nb.experimental.jitclass(self.simlist) # numba jit class with variables in simlist
         class SimClass():
             def __init__(self):
                 pass
