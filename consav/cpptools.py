@@ -43,8 +43,8 @@ def setup_nlopt(vs_path = 'C:/Program Files (x86)/Microsoft Visual Studio/2017/C
         file.extractall(f'{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64/')
 
     # c. setup string
-    pwd_str = f'cd "{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64/"\n'    
-    path_str = f'cd "{vs_path}"\n'
+    pwd_str = f'cd /d "{os.getcwd()}/cppfuncs/nlopt-2.4.2-dll64/"\n'    
+    path_str = f'cd /d "{vs_path}"\n'
     version_str = 'call vcvarsall.bat x64\n'
     setup_str = 'lib /def:libnlopt-0.def /machine:x64'
     
@@ -97,8 +97,8 @@ def compile(filename,compiler='vs',
 
     # a. compile string
     if compiler == 'vs':
-        pwd_str = 'cd "' + os.getcwd() + '"\n'    
-        path_str = f'cd "{vs_path}"\n'
+        pwd_str = 'cd /d "' + os.getcwd() + '"\n'    
+        path_str = f'cd /d "{vs_path}"\n'
         version_str = 'call vcvarsall.bat x64\n'
         if use_nlopt:
             compile_str = f'cl {nlopt_lib} /LD /EHsc /Ox /openmp {filename}.cpp\n'
@@ -106,8 +106,8 @@ def compile(filename,compiler='vs',
             compile_str = f'cl /LD /EHsc /Ox /openmp {filename}.cpp\n'
         lines = [path_str,version_str,pwd_str,compile_str]
     elif compiler == 'intel':
-        pwd_str = 'cd "' + os.getcwd() + '"\n'            
-        path_str = f'cd "{intel_path}"\n'
+        pwd_str = 'cd /d "' + os.getcwd() + '"\n'            
+        path_str = f'cd /d "{intel_path}"\n'
         version_str = f'call ipsxe-comp-vars.bat intel64 {intel_vs_version}\n'
         if use_nlopt:
             compile_str = f'icl {nlopt_lib} /LD /O3 /arch:CORE-AVX512 /openmp {filename}.cpp\n'
