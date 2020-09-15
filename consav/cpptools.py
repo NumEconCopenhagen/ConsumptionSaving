@@ -159,38 +159,47 @@ def set_argtypes(cppfile,funcs):
         funcnow.restype = None
         funcnow.argtypes = argtypes
 
-def link(filename,funcs,use_openmp_with_vs=False,do_print=True): 
+def link(filename,funcs,use_openmp_with_vs=False,
+         nlopt_lib = 'cppfuncs/nlopt-2.4.2-dll64/libnlopt-0.lib',
+         do_print=True): 
     """ link cpp library
         
     Args:
 
         filename (str): path to .dll file (no .dll extension!)
         funcs (list): list of functions with elements (functionname,[argtype1,argtype2,etc.])
-        use_openmp_with_vs (bool,optional): use openmp with vs as sompiler
-        do_print (str,optional): print if successfull
+        use_openmp_with_vs (bool,optional): use openmp with vs as sompiler        
+        nlopt_lib (str,optional): path to nlopt library
+        do_print (str,optional): print if successfull        
 
     Return:
     
-        cppfile (ctypes.CDLL): c++ library (result of ct.cdll.LoadLibrary('cppfile.dll'))
+        cppfile (ctypes.CDLL): C++ library (result of ct.cdll.LoadLibrary('cppfile.dll'))
     
     """
 
     # a. link
-    cppfile = ct.cdll.LoadLibrary(filename + '.dll')
+    if os.path.isfile(nlopt_lib):
+        nloptfile = ct.cdll.LoadLibrary(f'{os.getcwd()}/libnlopt-0.dll')
+
+    cppfile = ct.cdll.LoadLibrary(f'{os.getcwd()}/{filename}.dll')
     if do_print:
-        print('cpp files loaded')
+        print('C++ files loaded')
     
     # b. functions
     set_argtypes(cppfile,funcs)
     if use_openmp_with_vs: # needed with openmp
         cppfile.setup_omp() # must exist
         delink(cppfile,filename,do_print=False,do_remove=False)
-        cppfile = ct.cdll.LoadLibrary(filename)
+        cppfile = ct.cdll.LoadLibrary(f'{os.getcwd()}/{filename}.dll')
         set_argtypes(cppfile,funcs)
 
+    if os.path.isfile(nlopt_lib):
+        delink(nloptfile,do_print=False,do_remove=False)
+        
     return cppfile
 
-def delink(cppfile,filename,do_print=True,do_remove=True):
+def delink(cppfile,filename=None,do_print=True,do_remove=True):
     """ delink cpp library
         
     Args:
