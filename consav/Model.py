@@ -334,13 +334,13 @@ class ModelClass():
         self.solcpp = cpptools.setup_struct(self.sollist,'sol_struct','cppfuncs//sol_struct.cpp')
         self.simcpp = cpptools.setup_struct(self.simlist,'sim_struct','cppfuncs//sim_struct.cpp')
 
-    def link_cpp(self,filename,funcnames,do_compile=True,do_print=False):
-        """ link c++ library
+    def link_cpp(self,filename,funcspecs,do_compile=True,do_print=False):
+        """ link C++ library
         
         Args:
 
             filename (str): path to .dll file (no .dll extension!)
-            funcames (list): list of function names
+            funcspecs (list): list of function names and (optionally) arguments
             do_compile (bool): compile from .cpp to .dll
             do_print (bool): print if succesfull
 
@@ -348,7 +348,9 @@ class ModelClass():
 
         use_openmp_with_vs = False
 
+        # a. compile
         if do_compile:
+
             cpptools.compile('cppfuncs//' + filename,
                 compiler=self.compiler,
                 vs_path=self.vs_path,
@@ -356,11 +358,19 @@ class ModelClass():
                 intel_vs_version=self.intel_vs_version, 
                 do_print=do_print)
 
-        funcs = [(name,[ct.POINTER(self.parcpp),ct.POINTER(self.solcpp),ct.POINTER(self.simcpp)]) for name in funcnames]
+        # b. function list
+        funcs = []
+        for funcspec in funcspecs:
+            if type(funcspec) == str:
+                funcs.append( (funcspec,[ct.POINTER(self.parcpp),ct.POINTER(self.solcpp),ct.POINTER(self.simcpp)]) )
+            else:
+                funcs.append(funcspec)
+        
         if self.compiler == 'vs': 
             funcs.append(('setup_omp',[]))
             use_openmp_with_vs = True
 
+        # c. link
         self.cppfiles[filename] = cpptools.link(filename,funcs,use_openmp_with_vs=use_openmp_with_vs,do_print=do_print)
                 
     def delink_cpp(self,filename,do_print=False,do_remove=True):
