@@ -2,209 +2,215 @@
 """Model
 
 This module provides a class for consumption-saving models with methods for saving and loading
-and interfacing with numba functions C++.
+and interfacing with numba jitted functions and C++.
 
 Modles 
 
 """
 
 import os
-import traceback
-import time
-import ctypes as ct
-import copy
+from copy import deepcopy
 import pickle
 from types import SimpleNamespace
 from collections import namedtuple
 
 import numpy as np
 
-from . import cpptools
+from .cpptools import link_to_cpp
 
 # main
 class ModelClass():
     
-    def __init__(self,name=None,load=False,**kwargs):
+    def __init__(self,name=None,
+            load=False,from_dict=None,
+            setup_infrastruct=True,
+            force_compile=True,**kwargs):
         """ defines default attributes """
+
+        if load: assert from_dict is None, 'dictionary should be be specified when loading'
 
         # a. name
         if name is None: raise Exception('name must be specified')
         self.name = name
 
-        # b. C++ information
-        self.cppinfo = {}
-        self.cppinfo['compiler'] = 'vs'
-        self.cppinfo['vs_path'] = 'C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary/Build/'
-        self.cppinfo['intel_path'] = 'C:/Program Files (x86)/IntelSWTools/compilers_and_libraries_2018.5.274/windows/bin/'
-        self.cppinfo['intel_vs_version'] = 'vs2017'
+        # list of internal of attributes (used when saving)
+        self.internal_attrs = [
+            'savefolder','namespaces','not_floats','other_attrs',
+            'cpp_filename','cpp_options']
 
-        # c. new or load
-        if not load: # new
-
-            # i. empty lists
-            self.not_float_list = []
-            self.savelist = []
-
-            # ii. create par, sol and sim 
-            self.par = SimpleNamespace()
-            self.sol = SimpleNamespace()
-            self.sim = SimpleNamespace()      
-
-            # ii. set independent variables in par, sol and sim
-            self.setup() # baseline
-            for key,val in kwargs.items(): setattr(self.par,key,val)
+        # b. new or load
+        if (not load) and (from_dict is None): # new
             
-            # iii. set independent variables in par, sol and sim
+            # i. empty containers
+            self.savefolder = 'saved' 
+            self.namespaces = []
+            self.not_floats = []
+            self.other_attrs = []
+            self.cpp = None
+            self.cpp_filename = None
+            self.cpp_options = {}
+
+            # ii. settings
+            assert hasattr(self,'settings'), 'The model must have defined an .settings() method'
+            self.settings()
+
+            # default to none
+            for attr in self.other_attrs:
+                if not hasattr(self,attr): setattr(self,attr,None)
+
+            for ns in self.namespaces:
+                setattr(self,ns,SimpleNamespace())
+
+            # iii setup
+            assert hasattr(self,'setup'), 'The model must have defined an .setup() method'
+            self.setup()
+
+            # iv. update
+            self.update(kwargs)
+            
+            # vi. allocate
+            assert hasattr(self,'allocate'), 'The model must have defined an .allocate() method'
             self.allocate()
 
-        else: # load
-
+        elif load: # load
+            
+            self.settings()
             self.load()
-            for key,val in kwargs.items(): setattr(self.par,key,val)
+            self.update(kwargs)
 
-        # d. infrastructure
-        self.setup_infrastructure()
-        self.update_jit()
+        else:
+            
+            self.from_dict(from_dict)
 
-    def setup(self):
-        """ set independent variables in par, sol and sim """
+        # c. infrastructure
+        if setup_infrastruct:
+            self.setup_infrastructure()
 
-        raise Exception('The model must have defined an .setup() method')
+        # d. link to C++
+        if not self.cpp_filename is None:
+            self.link_to_cpp(force_compile=force_compile)
+        else:
+            self.cpp = None
+    
+    def update(self,upd_dict):
+        """ update """
 
-    def allocate(self):
-        """ set independent variables in par, sol and sim """
-
-        raise Exception('The model must have defined an .allocate() method')
+        for nskey,values in upd_dict.items():
+            assert nskey in self.namespaces, f'{nskey} is not a namespace'
+            assert type(values) is dict, f'{nskey} must be dict'
+            for key,value in values.items():
+                assert hasattr(getattr(self,nskey),key), f'{key} is not in {nskey}' 
+                setattr(getattr(self,nskey),key,value)        
 
     ####################
     ## infrastructure ##
     ####################
 
     def setup_infrastructure(self):
-        """ setup infrastructure to call numba jit functions and C++ functions """
+        """ setup infrastructure to call numba jit functions """
         
         # a. convert to dictionaries
-        par_dict = self.par.__dict__
-        sol_dict = self.sol.__dict__
-        sim_dict = self.sim.__dict__
+        ns_dict = {}
+        for ns in self.namespaces:
+            ns_dict[ns] = getattr(self,ns).__dict__
 
         # b. type check
         def check(key,val):
 
-            scalar_or_ndarray = np.isscalar(val) or type(val) is np.ndarray
-            assert scalar_or_ndarray, f'{key} is not scalar or numpy array'
+            _scalar_or_ndarray = np.isscalar(val) or type(val) is np.ndarray
+            assert _scalar_or_ndarray, f'{key} is not scalar or numpy array'
             
-            listed_non_float = not np.isscalar(val) or type(val) is str or type(val) is np.float or key in self.not_float_list
-            assert listed_non_float, f'{key} is {type(val)}, not float, but not on the list'
+            _non_float = not np.isscalar(val) or type(val) is str or type(val) is np.float or key in self.not_floats
+            assert _non_float, f'{key} is {type(val)}, not float, but not on the list'
 
-        for key,val in par_dict.items(): check(key,val)
-        for key,val in sol_dict.items(): check(key,val)
-        for key,val in sim_dict.items(): check(key,val)
+        for ns in self.namespaces:
+            for key,val in ns_dict[ns].items():
+                check(key,val)
 
         # c. namedtuple (definitions)
-        self.ParClass = namedtuple(f'ParClass',[key for key in par_dict.keys()])
-        self.SolClass = namedtuple(f'SolClass',[key for key in sol_dict.keys()])        
-        self.SimClass = namedtuple(f'SimClass',[key for key in sim_dict.keys()])        
+        self.ns_jit_def = {}
+        for ns in self.namespaces:
+            self.ns_jit_def[ns] = namedtuple(f'{ns.capitalize()}Class',[key for key in ns_dict[ns].keys()])
 
     def update_jit(self):
         """ update values and references in par_jit, sol_jit, sim_jit """
 
-        self.par_jit = self.ParClass(**self.par.__dict__)
-        self.sol_jit = self.SolClass(**self.sol.__dict__)
-        self.sim_jit = self.SimClass(**self.sim.__dict__)
+        self.ns_jit = {}
+        for ns in self.namespaces:
+            self.ns_jit[ns] = self.ns_jit_def[ns](**getattr(self,ns).__dict__)
 
     ####################
     ## save-copy-load ##
     ####################
-
-    def save(self,drop_sol=False,drop_sim=False):
-        """ save the model parameters, the solution simulation variables (in /data) """
-        
-        if not os.path.exists('data'):
-            os.makedirs('data')
-
-        # a. save parameters
-        with open(f'data/{self.name}_par.p', 'wb') as f:
-            pickle.dump(self.par, f)
-
-        # b. solution
-        if drop_sol:
-            sol_dict = {}
-        else:
-            sol_dict = self.sol.__dict__
-        np.savez(f'data/{self.name}_sol.npz', **sol_dict)
     
-        # c. simulation
-        if drop_sim:
-            sim_dict = {}
-        else:        
-            sim_dict = self.sim.__dict__
-        np.savez(f'data/{self.name}_sim.npz', **sim_dict)
+    def all_attrs(self):
+        """ return all attributes """
 
-        # d. additional
-        internal_savelist = [key for key in ['cppinfo','not_float_list','savelist'] if hasattr(self,key)]
-        savelist = self.savelist + internal_savelist
-        savelist_dict = {key:getattr(self,key) for key in savelist}
-        with open(f'data/{self.name}.p', 'wb') as f:
-            pickle.dump(savelist_dict, f)     
+        return self.namespaces + self.other_attrs + self.internal_attrs
 
-    def copy(self,name=None,**kwargs):
-        """ copy the model parameters, the solution simulation variables """
+    def as_dict(self,drop=[]):
+        """ return a dict version of the model """
         
-        if name is None: name = f'{self.name}_copy' # if not
-        other = self.__class__(name=name)
+        model_dict = {}
+        for attr in self.all_attrs():
+            if not attr in drop: model_dict[attr] = getattr(self,attr)
 
-        # a. parameters
-        for key,val in self.par.__dict__.items():
-            setattr(other.par,key,copy.copy(val))
+        return model_dict
 
-        # b. solution
-        for key,val in self.sol.__dict__.items():
-            setattr(other.sol,key,copy.copy(val))
-    
-        # c. simulation
-        for key,val in self.sim.__dict__.items():
-            setattr(other.sim,key,copy.copy(val))
+    def from_dict(self,model_dict,do_copy=False):
+        """ construct the model from a dict version of the model """
 
-        # d. savelist
-        internal_savelist = [key for key in ['cppinfo','not_float_list','savelist'] if hasattr(self,key)]
-        savelist = self.savelist + internal_savelist
-        for key in savelist:
-            setattr(other,key,copy.deepcopy(getattr(self,key)))
+        self.namespaces = model_dict['namespaces']
+        self.other_attrs = model_dict['other_attrs']
+        for attr in self.all_attrs():
+            if attr in model_dict:
+                if do_copy:
+                    setattr(self,attr,deepcopy(model_dict[attr]))
+                else:
+                    setattr(self,attr,model_dict[attr])
+            else:
+                setattr(self,attr,None)
 
-        # e. update
-        for key,val in kwargs.items(): setattr(other.par,key,val)
+    def save(self,drop=[]):
+        """ save the model """
 
-        return other
+        # a. ensure path        
+        if not os.path.exists(self.savefolder):
+            os.makedirs(self.savefolder)
+
+        # b. create model dict
+        model_dict = self.as_dict(drop=drop)
+
+        # b. save to disc
+        with open(f'{self.savefolder}/{self.name}.p', 'wb') as f:
+            pickle.dump(model_dict, f)
 
     def load(self):
-        """ load par, sol, sim and anything in .savelist """
+        """ load the model """
 
-        # a. parameters
-        with open(f'data/{self.name}_par.p', 'rb') as f:
-            self.par = pickle.load(f)
+        # a. load
+        with open(f'{self.savefolder}/{self.name}.p', 'rb') as f:
+            model_dict = pickle.load(f)
+        
+        # b. construct
+        self.from_dict(model_dict)
 
-        # b. solution
-        self.sol = SimpleNamespace()
-        with np.load(f'data/{self.name}_sol.npz') as data:
-            for key in data.files:
-                setattr(self.sol,key,data[key])
+    def copy(self,name=None,**kwargs):
+        """ copy the model """
+        
+        # a. name
+        if name is None: name = f'{self.name}_copy'
+        
+        # b. model dict
+        model_dict = self.as_dict()
 
-        # c. simulation
-        self.sim = SimpleNamespace()            
-        with np.load(f'data/{self.name}_sim.npz') as data:
-            for key in data.files:
-                setattr(self.sim,key,data[key])
+        # b. initialize
+        other = self.__class__(name=name,force_compile=False)
+        other.from_dict(model_dict,do_copy=True)
+        other.update(kwargs)
+        other.ns_jit_def = self.ns_jit_def
 
-        # d. additional
-        filesavelist = f'data/{self.name}.p'
-        if os.path.isfile(filesavelist):
-            
-            with open(filesavelist, 'rb') as f:
-                savelist_dict = pickle.load(f)
-
-            for key,val in savelist_dict.items():
-                setattr(self,key,val)
+        return other
 
     ##########
     ## print #
@@ -234,180 +240,41 @@ class ModelClass():
                 else:                
                     description += f' {key} = ?\n'
 
-            description += f'memory, gb: {nbytes/(10**9):.1f}\n' 
+            description += f' memory, gb: {nbytes/(10**9):.1f}\n' 
             return description
 
         description = f'Modelclass: {self.__class__.__name__}\n\n'
 
-        description += 'Parameters:\n'
-        description += print_items(self.par)
-        description += '\n'
+        description += 'namespaces: ' + str(self.namespaces) + '\n'
+        description += 'other_attrs: ' + str(self.other_attrs) + '\n'
+        description += 'savefolder: ' + str(self.savefolder) + '\n'
+        description += 'not_floats: ' + str(self.not_floats) + '\n'
 
-        description += 'Solution:\n'
-        description += print_items(self.sol)
-        description += '\n'
-
-        description += 'Simulation:\n'
-        description += print_items(self.sim)
+        for ns in self.namespaces:
+            description += '\n'
+            description += f'{ns}:\n'
+            description += print_items(getattr(self,ns))
 
         return description 
 
     #######################
     ## interact with cpp ##
     #######################
-    
-    def setup_cpp(self,use_nlopt=False):
-        """ setup interface to cpp files """
 
-        # a. setup NLopt
-        if use_nlopt and not os.path.isfile(f'{os.getcwd()}/libnlopt-0.dll'):
-            cpptools.setup_nlopt(vs_path=self.cppinfo['vs_path'])
-            
-        # b. dictionary of cppfiles
-        self.cppfiles = dict()
+    def link_to_cpp(self,force_compile=True):
 
-        # c. ctypes version of par, sol and sim classes
-        self.par_cpp = cpptools.setup_struct(self.par,'par_struct','cppfuncs//par_struct.cpp')
-        self.sol_cpp = cpptools.setup_struct(self.sol,'sol_struct','cppfuncs//sol_struct.cpp')
-        self.sim_cpp = cpptools.setup_struct(self.sim,'sim_struct','cppfuncs//sim_struct.cpp')
+        # a. unpack
+        filename = self.cpp_filename
+        options = self.cpp_options
+        structsmap = {ns:getattr(self,ns) for ns in self.namespaces}
 
-    def link_cpp(self,filename,funcspecs,do_compile=True,do_print=False):
-        """ link C++ library
-        
-        Args:
+        # b. link to C++
+        self.cpp = link_to_cpp(filename,force_compile=force_compile,options=options,structsmap=structsmap)
 
-            filename (str): path to .dll file (no .dll extension!)
-            funcspecs (list): list of function names and (optionally) arguments
-            do_compile (bool): compile from .cpp to .dll
-            do_print (bool): print if succesfull
+    ############
+    # clean-up #
+    ############
 
-        """
+    def __del__(self):
 
-        use_openmp_with_vs = False
-
-        # a. compile
-        if do_compile:
-
-            cpptools.compile('cppfuncs//' + filename,
-                compiler=self.cppinfo['compiler'],
-                vs_path=self.cppinfo['vs_path'],
-                intel_path=self.cppinfo['intel_path'], 
-                intel_vs_version=self.cppinfo['intel_vs_version'], 
-                do_print=do_print)
-
-        # b. function list
-        funcs = []
-        for funcspec in funcspecs:
-            if type(funcspec) == str:
-                funcs.append( (funcspec,[ct.POINTER(self.par_cpp),ct.POINTER(self.sol_cpp),ct.POINTER(self.sim_cpp)]) )
-            else:
-                funcs.append(funcspec)
-        
-        if self.cppinfo['compiler'] == 'vs': 
-            funcs.append(('setup_omp',[]))
-            use_openmp_with_vs = True
-
-        # c. link
-        self.cppfiles[filename] = cpptools.link(filename,funcs,use_openmp_with_vs=use_openmp_with_vs,do_print=do_print)
-                
-    def delink_cpp(self,filename,do_print=False,do_remove=True):
-        """ delink cpp library
-        
-        Args:
-
-            filename (str): path to .dll file (no .dll extension!).
-            do_print (bool,optional): print if successfull    
-            do_remove (bool,optional): remove dll file after delinking
-                    
-         """
-
-        cpptools.delink(self.cppfiles[filename],filename,do_print=do_print,do_remove=do_remove)
-
-    def call_cpp(self,filename,funcname):
-        """ call C++ function in linked C++ library
-        
-        Args:
-        
-            filename (str): path to .cpp file (no .cpp extension!).
-            funcname (str): print if successfull    
-        
-        """ 
-            
-        p_par = cpptools.get_struct_pointer(self.par,self.par_cpp)
-        p_sol = cpptools.get_struct_pointer(self.sol,self.sol_cpp)
-        p_sim = cpptools.get_struct_pointer(self.sim,self.sim_cpp)
-        
-        funcnow = getattr(self.cppfiles[filename],funcname)
-        funcnow(p_par,p_sol,p_sim)
-    
-    ##############
-    ## run file ##
-    ##############
-
-    def write_run_file(self,filename='run.py',name='',method='',**kwargs):
-        """ write and run a .py file
-        
-        Args:
-        
-            filename (str,optional): name of run fil
-            name (str,optional): name of instance
-            solmethod (str,optional): solutionmethod
-            method (str,optional): method to call in run file
-            **kwargs: parameters to be updated from baseline
-        
-        """ 
-
-        modulename = self.__class__.__module__
-        modelname = self.__class__.__name__
-
-        if name == '': name = self.name
-        if method == '': method = 'solve'
-
-        with open(f'{filename}', 'w') as txtfile:
-            
-            txtfile.write(f'from {modulename} import {modelname}\n')
-            txtfile.write('updpar = dict()\n')
-            for key,val in kwargs.items():
-                if type(val) is str:
-                    txtfile.write(f'updpar["{key}"] = "{val}"\n')
-                else:
-                    txtfile.write(f'updpar["{key}"] = {val}\n')
-
-            txtfile.write(f'model = {modelname}(name="{name}",**updpar)\n')
-            txtfile.write(f'model.{method}()\n')
-
-#######
-# jit #
-#######
-class jit(): 
-
-    def __init__(self,model): 
-        
-        self.model = model
-        self.par = model.par
-        self.sol = model.sol
-        self.sim = model.sim
-      
-    def __enter__(self): 
-
-        self.model.update_jit()
-        self.model.par = self.model.par_jit
-        self.model.sol = self.model.sol_jit
-        self.model.sim = self.model.sim_jit
-
-        return self.model
-  
-    def __exit__(self, exc_type, exc_value, tb):
-
-        if exc_type is not None:
-            traceback.print_exception(exc_type, exc_value, tb)
-
-        self.model.par = self.par
-        self.model.sol = self.sol
-        self.model.sim = self.sim
-
-        del self.model.par_jit
-        del self.model.sol_jit
-        del self.model.sim_jit
-
-        return True
+        if hasattr(self.cpp,'cppfile'): self.cpp.delink()            

@@ -1,461 +1,375 @@
-# -*- coding: utf-8 -*-
-"""cpptools
-
-This module provides a simplified interface for calling C++ functions in Python. 
-
-The compile() function takes a .cpp as input, writes a .bat file, and run it 
-to compile a .dll file. The link() function loads the .dll file and defines 
-the required functions. The .dll can be unloaded with unlink().
-
-In the sub-section #struct# an interface for passing a Python object (e.g. dict or SimpleNamespace) 
-to a C++ struct is included. The order of fields must be exactly the same in Python and C++. To 
-avoid errors a function writing the C++ struct from the Python object is provided.
-
-"""
-
 import os
-import time
-import zipfile
-import urllib.request
 import ctypes as ct
+import re
 import numpy as np
 
-import os, zipfile
+from .cppcompile import compile, set_default_options, setup_nlopt
+from .cppstruct import setup_struct, get_struct_pointer
 
-def find_vs_path():
-    """ find path to visual studio """
+#################
+# file analysis #
+#################
 
-    paths = [   
-        'C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/VC/Auxiliary/Build/',
-        'C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary/Build/'
-    ]
-
-    for path in paths:
-        if os.path.isdir(path): return path
-
-    raise Exception('no Visual Studio installation found')
-
-def setup_nlopt(vs_path=None,download=True,nloptfolder='cppfuncs',do_print=True):
-    """download and setup nlopt
+def find_all_filenames(filename,do_print=False):
+    """ find all included MYFILES on the form '#include "MYFILE.cpp"' in filename 
+    
+    Note: Deeper nested includes not included.
 
     Args:
 
-        vs_path (str,optional): path to vs compiler
-        download (bool,optional): download nlopt
-        nloptfolder (str,optional): foldername
-        do_print (bool,optional): print status
-
-    """
-
-    vs_path = vs_path if not vs_path is None else find_vs_path()
-
-    # a. download
-    if download:
-        url = 'http://ab-initio.mit.edu/nlopt/nlopt-2.4.2-dll64.zip'
-        nloptzip = f'{os.getcwd()}/{nloptfolder}/nlopt-2.4.2-dll64.zip'
-        urllib.request.urlretrieve(url, nloptzip)
-
-    # b. unzip
-    if download:
-        filename = os.path.abspath(f'{os.getcwd()}/{nloptfolder}/nlopt-2.4.2-dll64.zip') 
-        with zipfile.ZipFile(filename) as file:
-            file.extractall(f'{os.getcwd()}/{nloptfolder}/nlopt-2.4.2-dll64/')
-
-    # c. setup string
-    pwd_str = f'cd /d "{os.getcwd()}/{nloptfolder}/nlopt-2.4.2-dll64/"\n'    
-    path_str = f'cd /d "{vs_path}"\n'
-    version_str = 'call vcvarsall.bat x64\n'
-    setup_str = 'lib /def:libnlopt-0.def /machine:x64'
-    
-    # d. write .bat
-    lines = [path_str,version_str,pwd_str,setup_str]
-    with open('compile.bat', 'w') as txtfile:
-        txtfile.writelines(lines)
-
-    # e. call .bat
-    result = os.system('compile.bat')
-    if result == 0:
-        if do_print: print('nlopt setup done')
-    else: 
-        raise ValueError('nlopt setup failed')
-    os.remove('compile.bat')
-
-    # f. copy
-    dst = f'{os.getcwd()}/libnlopt-0.dll'
-    if os.path.isfile(dst):
-        os.remove(dst)
-    os.rename(f'{os.getcwd()}/{nloptfolder}/nlopt-2.4.2-dll64/libnlopt-0.dll',dst)
-
-    # g. remove zip file
-    if download: os.remove(nloptzip) 
-
-def compile(filename,
-            compiler='vs',
-            vs_path = None,
-            intel_path = 'C:/Program Files (x86)/IntelSWTools/compilers_and_libraries_2018.5.274/windows/bin/',
-            intel_vs_version = 'vs2017',
-            nlopt_lib = 'cppfuncs/nlopt-2.4.2-dll64/libnlopt-0.lib',
-            additional_cpp = '',
-            macros=None,
-            dllfilename='',do_print=True):      
-    """compile cpp file to dll
-
-    Args:
-
-        filename (str): path to .cpp file (no .cpp extensions!)
-        compiler (str,optional): compiler choice (vs or intel)
-        vs_path (str,optional): path to vs compiler (if None then newest version found used)
-        intel_path (str,optional): path to intel compiler
-        intel_vs_version (str,optional): vs version used by intel compiler
-        nlopt_lib (str,optional): path to nlopt library
-        additional_cpp (str,optional): additional cpp files to include
-        dllfilename (str,optional): filename of resulting dll file
-        macros (dict/list,optional): preprocessor macros
-        do_print (bool,optional): print if succesfull
-
-    """
-
-    if compiler == 'vs':
-        vs_path = vs_path if not vs_path is None else find_vs_path()
-
-    if os.path.isfile(nlopt_lib):
-        use_nlopt = True
-    else:
-        use_nlopt = False
-
-    # a. compile string
-    if compiler == 'vs':
-        
-        pwd_str = 'cd /d "' + os.getcwd() + '"\n'    
-        path_str = f'cd /d "{vs_path}"\n'
-        version_str = 'call vcvarsall.bat x64\n'
-        
-        compile_str = f'cl'
-        if use_nlopt: compile_str += f' {nlopt_lib}'
-        compile_str += f' /LD /EHsc /Ox /openmp {filename}.cpp {additional_cpp}'
-        if not macros is None:
-            if type(macros) is dict:
-                for k,v in macros.items():
-                    if v is None:
-                        compile_str += f' /D{k}'
-                    else:
-                        compile_str += f' /D{k}={v}'
-            elif type(macros) is list:
-                for k in macros: compile_str += f' /D{k}'
-        compile_str += '\n'
-
-        lines = [path_str,version_str,pwd_str,compile_str]
-
-    elif compiler == 'intel':
-        
-        pwd_str = 'cd /d "' + os.getcwd() + '"\n'            
-        path_str = f'cd /d "{intel_path}"\n'
-        version_str = f'call ipsxe-comp-vars.bat intel64 {intel_vs_version}\n'
-        
-        compile_str = f'icl'
-        if use_nlopt: compile_str += f' {nlopt_lib}'
-        compile_str += ' /LD /EHsc /O3 /arch:CORE-AVX512 /openmp {filename}.cpp {additional_cpp}'
-        if not macros is None:
-            if type(macros) is dict:
-                for k,v in macros.items():
-                    if v is None:
-                        compile_str += f' /D{k}'
-                    else:
-                        compile_str += f' /D{k}={v}'
-            elif type(macros) is list:
-                for k in macros: compile_str += f' /D{k}'
-        compile_str += '\n'
-                    
-        lines = [path_str,version_str,pwd_str,compile_str]
-        
-    # b. write .bat
-    with open('compile.bat', 'w') as txtfile:
-        txtfile.writelines(lines)
-                               
-    # c. compile
-    result = os.system('compile.bat')
-    if result == 0:
-        if do_print:
-            print('C++ files compiled')
-    else: 
-        raise ValueError('C++ files can not be compiled')
-
-    # d. rename dll
-    filename_raw = os.path.splitext(os.path.basename(filename))[0]
-    if dllfilename != '':
-        os.replace(f'{filename_raw}.dll',dllfilename + '.dll')
-
-    # e. clean up
-    os.remove('compile.bat')
-    if compiler == 'vs':
-        os.remove(f'{filename_raw}.obj')
-        os.remove(f'{filename_raw}.lib')
-        os.remove(f'{filename_raw}.exp')    
-    elif compiler == 'intel':
-        os.remove(f'{filename_raw}.obj')
-        os.remove(f'{filename_raw}.lib')
-        os.remove(f'{filename_raw}.exp')
-
-def set_argtypes(cppfile,funcs):
-    """ set argument types
-
-    Args:
-        cppfile (ctypes.CDLL): c++ library (result of ct.cdll.LoadLibrary('cppfile.dll'))
-        funcs (list): list of functions with elements (functionname,[argtype1,argtype2,etc.])
-        
-    """
-
-    for func in funcs:
-        name = func[0]
-        argtypes = func[1]        
-        funcnow = getattr(cppfile,name)
-        funcnow.restype = None
-        funcnow.argtypes = argtypes
-
-def link(filename,funcs,use_openmp_with_vs=False,
-         nlopt_lib = 'cppfuncs/nlopt-2.4.2-dll64/libnlopt-0.lib',
-         do_print=True): 
-    """ link cpp library
-        
-    Args:
-
-        filename (str): path to .dll file (no .dll extension!)
-        funcs (list): list of functions with elements (functionname,[argtype1,argtype2,etc.])
-        use_openmp_with_vs (bool,optional): use openmp with vs as sompiler        
-        nlopt_lib (str,optional): path to nlopt library
-        do_print (str,optional): print if successfull        
-
-    Return:
-    
-        cppfile (ctypes.CDLL): C++ library (result of ct.cdll.LoadLibrary('cppfile.dll'))
-    
-    """
-
-    # a. link
-    if os.path.isfile(nlopt_lib):
-        nloptfile = ct.cdll.LoadLibrary(f'{os.getcwd()}/libnlopt-0.dll')
-
-    cppfile = ct.cdll.LoadLibrary(f'{os.getcwd()}/{filename}.dll')
-    if do_print:
-        print('C++ files loaded')
-    
-    # b. functions
-    set_argtypes(cppfile,funcs)
-    if use_openmp_with_vs: # needed with openmp
-        cppfile.setup_omp() # must exist
-        delink(cppfile,filename,do_print=False,do_remove=False)
-        cppfile = ct.cdll.LoadLibrary(f'{os.getcwd()}/{filename}.dll')
-        set_argtypes(cppfile,funcs)
-
-    if os.path.isfile(nlopt_lib):
-        delink(nloptfile,do_print=False,do_remove=False)
-        
-    return cppfile
-
-def delink(cppfile,filename=None,do_print=True,do_remove=True):
-    """ delink cpp library
-        
-    Args:
-    
-        cppfile (ctypes.CDLL): C++ library (result of ct.cdll.LoadLibrary('cppfile.dll'))
-        filename (str): path to .dll file (no .dll extension!).
-        do_print (bool,optional): print if successfull    
-        do_remove (bool,optional): remove dll file after delinking
-
-    """
-
-    # a. get handle
-    handle = cppfile._handle
-
-    # b. delete linking variable
-    del cppfile
-
-    # c. free handle
-    ct.windll.kernel32.FreeLibrary.argtypes = [ct.wintypes.HMODULE]
-    ct.windll.kernel32.FreeLibrary(handle)
-    if do_print:
-        print('C++ files delinked')
-
-    # d. remove dll file
-    if do_remove:
-        os.remove(filename + '.dll')
-
-##########
-# struct #
-##########
-
-def get_fields(pythonobj):
-    """ construct ctypes list of fields from pythonobj
-    
-    Args:
-    
-        pythonobj: e.g. class, SimpleNamespace or namedtuple
+        filename (str): filename to search in
+        do_print (bool,optional): print progress
 
     Returns:
-    
-        ctlist (list): list of fields with elements (name,ctypes type) 
-        cttxt (str): string with content of C++ struct
+
+        all_filenames (list): list of filenames
 
     """
 
-    ctlist = []
-    cttxt = ''
+    if do_print: print(f'\n### finding all included files ###\n')
 
-    for key,val in pythonobj.__dict__.items():
+    dirname = os.path.dirname(filename)
+    all_filenames = [filename]
 
-        # a. scalars
-        if np.isscalar(val):
+    # a. retrieve code
+    with open(filename, 'r') as file: code = file.read()
 
-            if type(val) is str:
-
-                ctlist.append((key,ct.POINTER(ct.c_char_p)))
-                cttxt += f' char *{key};\n' 
-
-            elif type(val) in [np.int,np.int_]:
+    # b. find includes
+    include_strs = re.findall('#include\s*"\s*.*?.cpp\s*"',code)
+    for include_str in include_strs:
         
-                ctlist.append((key,ct.c_long))
-                cttxt += f' int {key};\n'
+        include = include_str
+        include = include.replace('#include','')
+        include = include.replace('\n','')
+        include = include.replace('"','')
+        include = include.replace(' ','')
         
-            elif type(val) in [np.float,np.float_]:
-            
-                ctlist.append((key,ct.c_double))          
-                cttxt += f' double {key};\n'
+        if do_print: print(include)
 
-            elif type(val) is np.bool:
+        all_filenames.append(f'{dirname}/{include}')
+
+    return all_filenames
+
+def analyze_cpp(funcs,filename,structnames=[],do_print=False):
+    """ analyse cpp-file in filename and add functions to funcs
+
+        funcs (dict): with funcnames as keys and (argtypes,restype) as values 
+        filename (str): filename to analyze
+        structnames (list,optional): list of structs used
+        do_print (bool,optional): print progress
+
+    """
+
+    if do_print: print(f'### analyzing {filename} ###\n')
+
+    # a. allowed types
+    all_restypes = ['void','double','int','bool']
+    all_argtypes = ['double*','double','int*','int','bool*','bool','char*','char'] 
+    all_argtypes += [f'{structname}*' for structname in structnames]
+
+    # b. retrieve code
+    with open(filename, 'r') as file: code = file.read()
         
-                ctlist.append((key,ct.c_bool))
-                cttxt += f' bool {key};\n'
-            
-            else:
+    # c. rough cleaning
+    code = code.replace('\n','')
+    code = code.replace('#define EXPORT extern "C" __declspec(dllexport)','')
+    code = re.sub('\/\*.*?\*\/',' ',code)
 
-                print(type(val) in [np.float,np.float_])
-                raise ValueError(f'unknown scalar type for {key}, type is {type(val)}')
+    # d. loop through all functions
+    func_strs = re.findall('EXPORT.*?\(.*?\)',code)
+    for func_str in func_strs:
+
+        # i. return type
+        restype = re.search('EXPORT\s+.*?\s+',func_str).group(0).replace('EXPORT','').replace(' ','')
         
-        # b. arrays
-        else:
-            
-            if val.dtype == np.int_:
+        # ii. function name
+        funcname = re.search(f'{restype} .*?\(',func_str).group(0).replace(restype,'').replace('(','').replace(' ','')
+        
+        # iii. argument types
+        argtypes = []
+        if re.search('\(\s*\)', func_str) is None:
 
-                ctlist.append((key,ct.POINTER(ct.c_long)))               
-                cttxt += f' int *{key};\n'
-                     
-            elif val.dtype == np.float_:
-            
-                ctlist.append((key,ct.POINTER(ct.c_double)))
-                cttxt += f' double *{key};\n'
-
-            elif val.dtype == np.bool_:
-            
-                ctlist.append((key,ct.POINTER(ct.c_bool)))
-                cttxt += f' bool *{key};\n'
-
-            else:
+            argtypes_raw = re.search('\(.*?\)',func_str).group(0).replace('(','').replace(')','').split(',')
+            for argtype_raw in argtypes_raw:
                 
-                raise ValueError(f'unknown type for {key}')
-    
-    return ctlist,cttxt
+                # o. pointer
+                pointer = '*' if '*' in argtype_raw else ''
+                Npointer = argtype_raw.count('*')
+                
+                # oo. type
+                argtype_no_pointer = argtype_raw.replace('*','')
+                argtype = re.search('\s*.*?\s+',argtype_no_pointer).group(0).replace(' ','')
 
-def setup_struct(pythonobj,structname=None,structfile=None):
-    """ create ctypes struct from setup_struct
-    
-    Args:
-    
-        pythonobj: e.g. class, SimpleNamespace or namedtuple
-        structname (str): name of C++ struct
-        strucfile (str): name of of filename for C++ struct
+                argtypes.append(argtype + pointer*Npointer)
 
-    Write strutfile with Cc++ struct called structname.
+        # iv. chekcs
+        return_check = (restype in all_restypes)
+        arg_check = all([ (argtype in all_argtypes or argtype is None) for argtype in argtypes])
 
-    Returns:
+        if (not return_check) or (not arg_check) or do_print:
 
-        ctstruct (class): ctypes struct type with elements from pythonobj
+            print(f'function: {funcname}')
+            print(f'return type: {restype}')
+            print(f'argument types: {argtypes}')
 
-     """
-
-    # a. get fields
-    ctlist, cttxt = get_fields(pythonobj)
-    
-    # d. write cpp file with struct
-    if structname is None: assert structfile is None
-    if structfile is None: assert structname is None
-    if not structname is None:
+        assert return_check, 'return type not allowed, should by in ' + str(all_restypes) 
+        assert arg_check, 'not all argument types not allowed, should by in ' + str(all_argtypes) 
         
-        with open(structfile, 'w') as cppfile:
+        # v. update
+        funcs[funcname] = (argtypes,restype)
+        if do_print: print('')
+     
+##########    
+# linker #
+##########
 
-            cppfile.write(f'typedef struct {structname}\n') 
-            cppfile.write('{\n')
-            cppfile.write(cttxt)
-            cppfile.write('}')
-            cppfile.write(f' {structname};\n\n')
+class link_to_cpp():
 
-    # c. ctypes struct
-    class ctstruct(ct.Structure):
-        _fields_ = ctlist
+    def __init__(self,filename,force_compile=True,structsmap={},
+                      options={},do_print=False):
+        """ link to C++ file
 
-    return ctstruct
+        Args:
 
-def get_pointers(pythonobj,ctstruct):
-    """ construct ctypes struct class with pointers from pythonobj
-    
-    Args:
-    
-        pythonobj: e.g. class, SimpleNamespace or namedtuple
-        ctstruct (class): ctypes struct type
+            filename (str): C++ file with .cpp extension
+            force_compile (bool,optional): compile even if .dll is present
+            structsmap (dict,optional): struct names as keys and associated pythonobj used in C++ as values
+            options (dict,optional): compiler options
+            do_print (bool,optional): print progress
 
-    Returns:
-    
-        p_ctstruct (class): ctypes struct with pointers to pythonobj
+        """
+
+        assert os.path.isfile(filename), f'"{filename}" does not exist'
+        if do_print: print(f'Linking to: {filename}')
+
+        # a. file structure
+        self.filename = filename
+        self.basename = os.path.basename(self.filename)        
+        self.dirname = os.path.dirname(self.filename)
+        self.filename_raw = os.path.splitext(self.basename)[0]
+
+        # b. options
+        self.structsmap = structsmap 
+        self.options = options
         
-    """
+        self.compile(force_compile=force_compile,do_print=do_print)
 
-    p_ctstruct = ctstruct()
-    
-    for field in ctstruct._fields_:
-        
-        key = field[0]                
-        val = getattr(pythonobj,key)
+    ###########
+    # compile #
+    ###########
 
-        if isinstance(field[1](),ct.POINTER(ct.c_char_p)):
-            pass # not implemented
-        
-        elif isinstance(field[1](),ct.c_long):
-            setattr(p_ctstruct,key,val)
-        elif isinstance(field[1](),ct.POINTER(ct.c_long)):
-            assert np.issubdtype(val.dtype, np.int_)
-            setattr(p_ctstruct,key,np.ctypeslib.as_ctypes(val.ravel()[0:1])) 
-            # why [0:1]? hack to avoid bug for arrays with more elements than highest int32
+    def compile(self,force_compile=True,do_print=False):
+        """ compile and link to C++ file
 
-        elif isinstance(field[1](),ct.c_double):
-            setattr(p_ctstruct,key,val)            
-        elif isinstance(field[1](),ct.POINTER(ct.c_double)):
-            assert np.issubdtype(val.dtype, np.float_)
-            setattr(p_ctstruct,key,np.ctypeslib.as_ctypes(val.ravel()[0:1]))
-            # why [0:1]? hack to avoid bug for arrays with more elements than highest int32
+        Args:
+
+            force_compile (bool,optional): compile even if .dll is present
+            do_print (bool,optional): print progress
+
+        """
+
+        # a. find all filenames
+        self.all_filenames = find_all_filenames(self.filename,do_print=do_print)
+
+        # b. setup all structs
+        self.structs = {}
+        self.structfiles = {}
+        if do_print: print('\n### writing structs ###\n')
         
-        elif isinstance(field[1](),ct.c_bool):
-            setattr(p_ctstruct,key,val)
-        elif isinstance(field[1](),ct.POINTER(ct.c_bool)):
-            assert np.issubdtype(val.dtype, np.bool_)
-            setattr(p_ctstruct,key,np.ctypeslib.as_ctypes(val.ravel()[0:1]))
-            # why [0:1]? hack to avoid bug for arrays with more elements than highest int32            
-        
+        for structname,struct in self.structsmap.items():
+
+            self.structfiles[structname] = f'{self.dirname}/{structname}.cpp'
+            if do_print: print(self.structfiles[structname] + '\n')
+            
+            self.structs[structname] = setup_struct(struct,structname,self.structfiles[structname],do_print=do_print)
+            
+        # c. analyze functions
+        structnames = [key for key in self.structs.keys()]
+
+        self.funcs = {}
+        for filename in self.all_filenames: 
+            analyze_cpp(self.funcs,filename,structnames,do_print=do_print)
+
+        # d. compile
+        if do_print: print('### compiling and linking ###\n')
+
+        if 'dllfilename' in self.options and (not self.options['dllfilename'] is None):
+            self.dllfilename = f'{os.getcwd()}/{self.options["dllfilename"]}'
         else:
-            raise ValueError(f'no such type, variable {key}')
-    
-    return p_ctstruct
+            self.dllfilename = f'{os.getcwd()}/{self.filename_raw}.dll'
 
-def get_struct_pointer(pythonobj,ctstruct):
-    """ return pointer to ctypes struct
-    
-    Args:
-    
-        pythonobj: e.g. class, SimpleNamespace or namedtuple
-        ctstruct (class): ctypes struct type
+        if not os.path.isfile(self.dllfilename) or force_compile:
+            compile(self.filename,options=self.options,do_print=do_print)
+        else:
+            set_default_options(self.options)
 
-    Returns:
-    
-        pointer: pointer to ctypes struct with pointers to pythonobj
-    
-    """
+        # e. link
 
-    return ct.byref(get_pointers(pythonobj,ctstruct))
+        # NLopt hack
+        do_nlopt = os.path.isfile(self.options['nlopt_lib'])
+        if do_nlopt: nloptfile = ct.cdll.LoadLibrary(f'{os.getcwd()}/libnlopt-0.dll')
+
+        # load
+        self.cppfile = ct.cdll.LoadLibrary(self.dllfilename)
+
+        # hack for OpenMP in Visual Studio
+        if self.options['compiler'] == 'vs':
+
+            self.cppfile.setup_omp()
+            self.delink()
+            self.cppfile = ct.cdll.LoadLibrary(self.dllfilename)
+        
+        # NLopt hack
+        if do_nlopt: self.delink(cppfile=nloptfile,do_print=False)
+
+        # set types
+        self.set_types()
+        if do_print: print('C++ files loaded\n')
+
+        # f. function call method
+        def call_func(name): return lambda *x: self.call_func(name,*x)
+        for funcname in self.funcs.keys():
+            setattr(self,funcname,call_func(funcname))
+
+        if do_print: print('DONE!')
+
+    def set_types(self):
+        """ set types for return and arguments for all functions """
+
+        for funcname,(argtypes_raw,restype_raw) in self.funcs.items():
+                
+            # a. arguments
+            argtypes = []
+            for argtype_raw in argtypes_raw:
+
+                if (argtype_raw_struct := argtype_raw.replace('*','')) in self.structs:
+                    argtype = ct.POINTER(self.structs[argtype_raw_struct])
+                elif argtype_raw == 'int*':
+                    argtype = ct.POINTER(ct.c_long)
+                elif argtype_raw == 'double*':
+                    argtype = ct.POINTER(ct.c_double)
+                elif argtype_raw == 'int':
+                    argtype = ct.c_long
+                elif argtype_raw == 'double':
+                    argtype = ct.c_double
+                elif argtype_raw == 'bool':
+                    argtype = ct.c_bool
+                elif argtype_raw == 'char*':
+                    argtype = ct.c_char_p                
+                else:
+                    raise Exception(f'argument type {argtype_raw} not allowed')
+                
+                argtypes.append(argtype)
+
+            # b. return
+            if restype_raw == 'void':
+                restype = None
+            elif restype_raw == 'int':
+                restype = ct.c_long
+            elif restype_raw == 'double':
+                restype = ct.c_double
+            elif restype_raw == 'bool':
+                restype = ct.c_bool
+            else:
+                raise Exception(f'return type {restype_raw} not allowed')
+
+            # c. set
+            funcnow = getattr(self.cppfile,funcname)
+            funcnow.restype = restype
+            if len(argtypes) > 0:
+                funcnow.argtypes = argtypes
+                    
+    def delink(self,cppfile=None,do_print=False):
+        """ delink C++ library 
+
+        Args:
+
+            cppfile (cdll,optional): loaded .dll file to delink
+            do_print (bool,optional): print progess
+
+        """
+
+        if cppfile is None: cppfile = self.cppfile
+
+        # a. get handle
+        handle = cppfile._handle
+    
+        # b. delete linking variable
+        del cppfile
+
+        # c. free handle
+        ct.windll.kernel32.FreeLibrary.argtypes = [ct.wintypes.HMODULE]
+        ct.windll.kernel32.FreeLibrary(handle)
+        
+        if do_print: print('C++ files delinked')
+
+    def recompile(self,force_compile=True,do_print=False):
+        """ re-compile and link to C++ file
+
+        Args:
+
+            force_compile (bool,optional): compile even if .dll present
+            do_print (bool,optional): print progress
+
+        """
+
+        self.delink()
+        self.compile(force_compile=force_compile,do_print=do_print)
+
+    #####################
+    # calling functions #
+    #####################
+    
+    def call_func(self,funcname,*args):
+        """ call function 
+        
+        Args:
+
+            funcname (str): function to call
+            *args: arguments to function
+
+        Returns
+
+            (None/int/double/bool): return of function
+
+        """
+        
+        # a. pointers to argumenters
+        p_args = []
+
+        argtypes_raw,_restype_raw = self.funcs[funcname]
+        for arg,argtype_raw in zip(args,argtypes_raw):
+
+            if (argtype_raw_struct := argtype_raw.replace('*','')) in self.structs:
+                p_arg = get_struct_pointer(arg,self.structs[argtype_raw_struct])
+            elif argtype_raw in ['int*','double*','bool*']:
+                p_arg = np.ctypeslib.as_ctypes(arg)
+            elif argtype_raw in ['double','int','bool']:
+                p_arg = arg
+            elif argtype_raw == 'char*':
+                p_arg = arg.encode()
+            else:
+                raise Exception(f'unknown argument {argtype_raw} with type {argtype_raw}')
+
+            p_args.append(p_arg)
+
+        # b. function call
+        funcnow = getattr(self.cppfile,funcname)
+        
+        return funcnow(*p_args)
+    
+    ############
+    # clean up #
+    ############
+
+    def clean_up(self):
+        """ remove dll filename and structs """
+
+        if hasattr(self,'cppfile'): self.delink()
+        os.remove(self.dllfilename)
+        for structname in self.structfiles.values():
+            os.remove(structname)
+
+    def __del__(self):
+
+        if hasattr(self,'cppfile'): self.delink()            
