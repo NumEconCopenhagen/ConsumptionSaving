@@ -23,11 +23,11 @@ class ModelClass():
     
     def __init__(self,name=None,
             load=False,from_dict=None,
-            setup_infrastruct=True,
-            force_compile=True,**kwargs):
+            setup_infrastruct=True,**kwargs):
         """ defines default attributes """
 
         if load: assert from_dict is None, 'dictionary should be be specified when loading'
+        assert not hasattr(self,'cpp'), 'the model can not have .cpp method'
 
         # a. name
         if name is None: raise Exception('name must be specified')
@@ -36,7 +36,7 @@ class ModelClass():
         # list of internal of attributes (used when saving)
         self.internal_attrs = [
             'savefolder','namespaces','not_floats','other_attrs',
-            'cpp_filename','cpp_options']
+            'cpp_filename','cpp_options','cpp_structsmap']
 
         # b. new or load
         if (not load) and (from_dict is None): # new
@@ -49,6 +49,7 @@ class ModelClass():
             self.cpp = None
             self.cpp_filename = None
             self.cpp_options = {}
+            self.cpp_structsmap = None
 
             # ii. settings
             assert hasattr(self,'settings'), 'The model must have defined an .settings() method'
@@ -58,8 +59,14 @@ class ModelClass():
             for attr in self.other_attrs:
                 if not hasattr(self,attr): setattr(self,attr,None)
 
+            self.par = SimpleNamespace()
+            self.sol = SimpleNamespace()
+            self.sim = SimpleNamespace()
+
             for ns in self.namespaces:
                 setattr(self,ns,SimpleNamespace())
+
+            self.namespaces = self.namespaces + ['par','sol','sim']
 
             # iii setup
             assert hasattr(self,'setup'), 'The model must have defined an .setup() method'
@@ -85,12 +92,6 @@ class ModelClass():
         # c. infrastructure
         if setup_infrastruct:
             self.setup_infrastructure()
-
-        # d. link to C++
-        if not self.cpp_filename is None:
-            self.link_to_cpp(force_compile=force_compile)
-        else:
-            self.cpp = None
     
     def update(self,upd_dict):
         """ update """
@@ -191,6 +192,8 @@ class ModelClass():
         # a. load
         with open(f'{self.savefolder}/{self.name}.p', 'rb') as f:
             model_dict = pickle.load(f)
+
+        self.cpp = None
         
         # b. construct
         self.from_dict(model_dict)
@@ -205,10 +208,12 @@ class ModelClass():
         model_dict = self.as_dict()
 
         # b. initialize
-        other = self.__class__(name=name,force_compile=False)
+        other = self.__class__(name=name)
         other.from_dict(model_dict,do_copy=True)
         other.update(kwargs)
         other.ns_jit_def = self.ns_jit_def
+        if not self.cpp is None:
+            other.link_to_cpp(force_compile=False)
 
         return other
 
@@ -243,7 +248,8 @@ class ModelClass():
             description += f' memory, gb: {nbytes/(10**9):.1f}\n' 
             return description
 
-        description = f'Modelclass: {self.__class__.__name__}\n\n'
+        description = f'Modelclass: {self.__class__.__name__}\n'
+        description += f'Name: {self.name}\n\n'
 
         description += 'namespaces: ' + str(self.namespaces) + '\n'
         description += 'other_attrs: ' + str(self.other_attrs) + '\n'
@@ -261,15 +267,21 @@ class ModelClass():
     ## interact with cpp ##
     #######################
 
-    def link_to_cpp(self,force_compile=True):
+    def link_to_cpp(self,force_compile=True,do_print=False):
+        """ link to C++ file """
 
         # a. unpack
         filename = self.cpp_filename
         options = self.cpp_options
-        structsmap = {ns:getattr(self,ns) for ns in self.namespaces}
+        if self.cpp_structsmap is None:
+            structsmap = {f'{ns}_struct':getattr(self,ns) for ns in self.namespaces}
+        else:
+            structsmap = {self.cpp_structsmap[ns]:getattr(self,ns) for ns in self.namespaces}
 
         # b. link to C++
-        self.cpp = link_to_cpp(filename,force_compile=force_compile,options=options,structsmap=structsmap)
+        self.cpp = link_to_cpp(filename,
+            force_compile=force_compile,options=options,structsmap=structsmap,
+            do_print=do_print)
 
     ############
     # clean-up #

@@ -184,7 +184,6 @@ def compile(filename,options={},do_print=False):
 
     # b. prepare visual studio
     if compiler == 'vs':
-        
         write_setup_omp()
 
     # c. check for nlopt

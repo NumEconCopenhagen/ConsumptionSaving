@@ -35,7 +35,7 @@ def find_all_filenames(filename,do_print=False):
     with open(filename, 'r') as file: code = file.read()
 
     # b. find includes
-    include_strs = re.findall('#include\s*"\s*.*?.cpp\s*"',code)
+    include_strs = re.findall(r'#include\s*"\s*.*?.cpp\s*"',code)
     for include_str in include_strs:
         
         include = include_str
@@ -73,23 +73,23 @@ def analyze_cpp(funcs,filename,structnames=[],do_print=False):
     # c. rough cleaning
     code = code.replace('\n','')
     code = code.replace('#define EXPORT extern "C" __declspec(dllexport)','')
-    code = re.sub('\/\*.*?\*\/',' ',code)
+    code = re.sub(r'\/\*.*?\*\/',' ',code)
 
     # d. loop through all functions
-    func_strs = re.findall('EXPORT.*?\(.*?\)',code)
+    func_strs = re.findall(r'EXPORT.*?\(.*?\)',code)
     for func_str in func_strs:
 
         # i. return type
-        restype = re.search('EXPORT\s+.*?\s+',func_str).group(0).replace('EXPORT','').replace(' ','')
+        restype = re.search(r'EXPORT\s+.*?\s+',func_str).group(0).replace('EXPORT','').replace(' ','')
         
         # ii. function name
-        funcname = re.search(f'{restype} .*?\(',func_str).group(0).replace(restype,'').replace('(','').replace(' ','')
+        funcname = re.search(fr'{restype} .*?\(',func_str).group(0).replace(restype,'').replace('(','').replace(' ','')
         
         # iii. argument types
         argtypes = []
-        if re.search('\(\s*\)', func_str) is None:
+        if re.search(r'\(\s*\)', func_str) is None:
 
-            argtypes_raw = re.search('\(.*?\)',func_str).group(0).replace('(','').replace(')','').split(',')
+            argtypes_raw = re.search(r'\(.*?\)',func_str).group(0).replace('(','').replace(')','').split(',')
             for argtype_raw in argtypes_raw:
                 
                 # o. pointer
@@ -98,7 +98,7 @@ def analyze_cpp(funcs,filename,structnames=[],do_print=False):
                 
                 # oo. type
                 argtype_no_pointer = argtype_raw.replace('*','')
-                argtype = re.search('\s*.*?\s+',argtype_no_pointer).group(0).replace(' ','')
+                argtype = re.search(r'\s*.*?\s+',argtype_no_pointer).group(0).replace(' ','')
 
                 argtypes.append(argtype + pointer*Npointer)
 
@@ -231,7 +231,7 @@ class link_to_cpp():
         for funcname in self.funcs.keys():
             setattr(self,funcname,call_func(funcname))
 
-        if do_print: print('DONE!')
+        if do_print: print('DONE!\n')
 
     def set_types(self):
         """ set types for return and arguments for all functions """
