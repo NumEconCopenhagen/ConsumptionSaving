@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+""" cppstruct
+
+Functions for using dict-like objects in Python in C++.
+"""
+
 import ctypes as ct
 import numpy as np
 
@@ -139,7 +145,10 @@ def get_pointers(pythonobj,ctstruct):
         val = getattr(pythonobj,key)
        
         if isinstance(field[1](),ct.c_long):
-            setattr(p_ctstruct,key,val)
+            try:
+                setattr(p_ctstruct,key,val)
+            except:
+                raise Exception(f'{key} is not an integer')
 
         elif isinstance(field[1](),ct.POINTER(ct.c_long)):
             assert np.issubdtype(val.dtype, np.int_)
@@ -147,7 +156,10 @@ def get_pointers(pythonobj,ctstruct):
             # why [0:1]? hack to avoid bug for arrays with more elements than highest int32
 
         elif isinstance(field[1](),ct.c_double):
-            setattr(p_ctstruct,key,val)   
+            try:
+                setattr(p_ctstruct,key,val)   
+            except:
+                raise Exception(f'{key} is not a floating point')
 
         elif isinstance(field[1](),ct.POINTER(ct.c_double)):
             assert np.issubdtype(val.dtype, np.float_)

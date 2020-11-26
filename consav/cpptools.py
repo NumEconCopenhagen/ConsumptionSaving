@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+""" cpptools
+
+Functions for calling C++ files from Python.
+"""
+
 import os
 import ctypes as ct
 import re
@@ -131,7 +137,7 @@ class link_to_cpp():
 
         Args:
 
-            filename (str): C++ file with .cpp extension
+            filename (str): C++ file with .cpp extension (full path)
             force_compile (bool,optional): compile even if .dll is present
             structsmap (dict,optional): struct names as keys and associated pythonobj used in C++ as values
             options (dict,optional): compiler options

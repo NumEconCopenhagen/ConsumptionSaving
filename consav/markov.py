@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+""" grids
+
+Functions for working with Markov-processes.
+"""
+
 import numpy as np
 from scipy.stats import norm
 from numpy.linalg import svd

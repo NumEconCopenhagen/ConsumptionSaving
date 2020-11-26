@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+""" grids
+
+Functions for creating grids.
+"""
+
 import numpy as np
 from numba import njit
 

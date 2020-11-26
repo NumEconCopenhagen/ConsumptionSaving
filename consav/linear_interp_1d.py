@@ -62,6 +62,7 @@ def interp_1d_vec(grid1,value,xi1,yi):
         grid1 (numpy.ndarray): 1d grid
         value (numpy.ndarray): value array (1d)
         xi1 (numpy.ndarray): input vector
+        yi1 (numpy.ndarray): output vector
 
     """
 

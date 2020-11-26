@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+""" quadrature
+
+Functions for quadrature (mostly Gauss-Hermite).
+"""
+
 import math
 import numpy as np
 

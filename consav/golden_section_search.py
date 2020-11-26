@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """golden section search
 
-This module provides a Numba JIT compilled golden section search optimizer for a custom objective.
+Numba JIT compilled golden section search optimizer for a custom objective.
 """
 
 import math

@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+""" cppcompile
+
+Functions for compiling C++ files to use in Python.
+"""
+
 import os
 import zipfile
 import urllib.request

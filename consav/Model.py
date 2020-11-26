@@ -1,11 +1,8 @@
 # -*- coding: utf-8 -*-
 """Model
 
-This module provides a class for consumption-saving models with methods for saving and loading
+Provides a class for consumption-saving models with methods for saving and loading
 and interfacing with numba jitted functions and C++.
-
-Modles 
-
 """
 
 import os
@@ -49,7 +46,7 @@ class ModelClass():
             self.cpp = None
             self.cpp_filename = None
             self.cpp_options = {}
-            self.cpp_structsmap = None
+            self.cpp_structsmap = {}
 
             # ii. settings
             assert hasattr(self,'settings'), 'The model must have defined an .settings() method'
@@ -207,8 +204,10 @@ class ModelClass():
         # b. model dict
         model_dict = self.as_dict()
 
-        # b. initialize
+        # c. initialize
         other = self.__class__(name=name)
+
+        # d. fill
         other.from_dict(model_dict,do_copy=True)
         other.update(kwargs)
         other.ns_jit_def = self.ns_jit_def
@@ -273,15 +272,19 @@ class ModelClass():
         # a. unpack
         filename = self.cpp_filename
         options = self.cpp_options
-        if self.cpp_structsmap is None:
-            structsmap = {f'{ns}_struct':getattr(self,ns) for ns in self.namespaces}
-        else:
-            structsmap = {self.cpp_structsmap[ns]:getattr(self,ns) for ns in self.namespaces}
+        
+        def structname(ns):
+
+            if ns in self.cpp_structsmap:
+                return self.cpp_structsmap[ns]
+            else:
+                return f'{ns}_struct'
+                
+        structsmap = {structname(ns):getattr(self,ns) for ns in self.namespaces}
 
         # b. link to C++
-        self.cpp = link_to_cpp(filename,
-            force_compile=force_compile,options=options,structsmap=structsmap,
-            do_print=do_print)
+        self.cpp = link_to_cpp(filename,force_compile=force_compile,options=options,
+            structsmap=structsmap,do_print=do_print)
 
     ############
     # clean-up #

@@ -1,3 +1,8 @@
+""" misc
+
+Misc. function.
+"""
+
 import time
 
 def elapsed(t0,t1=None):

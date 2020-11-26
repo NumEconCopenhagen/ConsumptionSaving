@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
-# -*- coding: utf-8 -*-
 """smd_std_error
 
-This module provides a funciton for calculating standard errors.
+Provides a funciton for calculating standard errors.
 """
 
 import numpy as np
