@@ -279,7 +279,7 @@ class ModelClass():
                 return self.cpp_structsmap[ns]
             else:
                 return f'{ns}_struct'
-                
+              
         structsmap = {structname(ns):getattr(self,ns) for ns in self.namespaces}
 
         # b. link to C++

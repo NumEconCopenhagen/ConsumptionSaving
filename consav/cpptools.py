@@ -87,7 +87,7 @@ def analyze_cpp(funcs,filename,structnames=[],do_print=False):
 
         # i. return type
         restype = re.search(r'EXPORT\s+.*?\s+',func_str).group(0).replace('EXPORT','').replace(' ','')
-        
+
         # ii. function name
         funcname = re.search(fr'{restype} .*?\(',func_str).group(0).replace(restype,'').replace('(','').replace(' ','')
         
