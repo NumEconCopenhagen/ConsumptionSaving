@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-""" grids
+""" markov
 
 Functions for working with Markov-processes.
 """
@@ -8,26 +8,27 @@ import numpy as np
 from scipy.stats import norm
 from numpy.linalg import svd
 from numba import njit
+from scipy import optimize
 
 ###########
 # tauchen #
 ###########
 
-def tauchen(mu,rho,sigma,m=3,N=7,cutoff=None):
+def tauchen(mu,rho,sigma,m=3,n=7,cutoff=None):
     """ tauchen approximation of autoregressive process
 
     Args:
 
-        mu (double): mean
+        mu (double): mean of shock
         rho (double): AR(1) coefficient
         sigma (double): std. of shock
         m (int): scale factor for width of grid
-        N (int): number of grid points
-        cutoff (double,optional):  
+        n (int): number of grid points
+        cutoff (double,optional): remove transition probabilities less than cutoff
 
     Returns:
 
-        x (numpy.ndarray): grid
+        grid (numpy.ndarray): grid
         trans (numpy.ndarray): transition matrix
         ergodic (numpy.ndarray): ergodic distribution
         trans_cumsum (numpy.ndarray): transition matrix (cumsum)
@@ -36,61 +37,64 @@ def tauchen(mu,rho,sigma,m=3,N=7,cutoff=None):
     """
      
     # a. allocate
-    x = np.zeros(N)
-    trans = np.zeros((N,N))
+    grid = np.zeros(n)
+    trans = np.zeros((n,n))
      
     # b. discretize x
-    std_x = np.sqrt(sigma**2/(1-rho**2))
+    std_grid = np.sqrt(sigma**2/(1-rho**2))
   
-    x[0] = mu/(1-rho) - m*std_x
-    x[N-1] = mu/(1-rho) + m*std_x
+    grid[0] = mu/(1-rho)-m*std_grid
+    grid[n-1] = mu/(1-rho)+m*std_grid
   
-    step = (x[N-1]-x[0])/(N-1)
+    step = (grid[n-1]-grid[0])/(n-1)
   
-    for i in range(1,N-1):
-        x[i] = x[i-1] + step
+    for i in range(1,n-1):
+        grid[i] = grid[i-1] + step
          
     # c. generate transition matrix
-    for j in range(N):
+    for j in range(n):
 
-        trans[j,0] = norm.cdf((x[0] - mu - rho*x[j] + step/2) / sigma)
-        trans[j,N-1] = 1 - norm.cdf((x[N-1] - mu - rho*x[j] - step/2) / sigma)
+        trans[j,0] = norm.cdf((grid[0] - mu - rho*grid[j] + step/2) / sigma)
+        trans[j,n-1] = 1 - norm.cdf((grid[n-1] - mu - rho*grid[j] - step/2) / sigma)
         
-        for k in range(1,N-1):
-            trans[j,k] = norm.cdf((x[k] - mu - rho*x[j] + step/2) / sigma) - \
-                         norm.cdf((x[k] - mu - rho*x[j] - step/2) / sigma)
+        for k in range(1,n-1):
+            trans[j,k] = norm.cdf((grid[k] - mu - rho*grid[j] + step/2) / sigma) - \
+                         norm.cdf((grid[k] - mu - rho*grid[j] - step/2) / sigma)
                        
     # d. find the ergodic distribution
     ergodic = find_ergodic(trans)
 
     # e. apply cutoff
-    if not np.isnan(cutoff):  
+    if not cutoff is None:  
         trans[trans < cutoff] = 0         
 
     # f. find cumsums
-    trans_cumsum = np.array([np.cumsum(trans[i, :]) for i in range(N)])
+    trans_cumsum = np.array([np.cumsum(trans[i,:]) for i in range(n)])
     ergodic_cumsum = np.cumsum(ergodic)
 
-    return x,trans,ergodic,trans_cumsum,ergodic_cumsum
+    return grid,trans,ergodic,trans_cumsum,ergodic_cumsum
 
 ###############
 # rouwenhorst #
 ###############
 
-def markov_rouwenhorst(rho,sigma,N=7):
-    """Rouwenhorst method analog to markov_tauchen
+def rouwenhorst(mu,rho,sigma,n=7):
+    """Rouwenhorst method to discretize autoregressie process
 
     Args:
 
+        mu (double): mean
         rho (double): AR(1) coefficient
         sigma (double): std. of shock
-        N (int): number of grid points
+        n (int): number of grid points
 
     Returns:
 
-        y (numpy.ndarray): grid
+        grid (numpy.ndarray): grid
         trans (numpy.ndarray): transition matrix
         ergodic (numpy.ndarray): ergodic distribution
+        trans_cumsum (numpy.ndarray): transition matrix (cumsum)
+        ergodic_cumsum (numpy.ndarray): ergodic distribution (cumsum)
 
     """
 
@@ -99,12 +103,12 @@ def markov_rouwenhorst(rho,sigma,N=7):
     trans = np.array([[p,1-p],[1-p,p]])
 
     # b. implement recursion to build from n = 3 to n = N
-    for n in range(3, N + 1):
-        P1, P2, P3, P4 = (np.zeros((n, n)) for _ in range(4))
-        P1[:-1, :-1] = p * trans
-        P2[:-1, 1:] = (1 - p) * trans
-        P3[1:, :-1] = (1 - p) * trans
-        P4[1:, 1:] = p * trans
+    for n in range(3,n+1):
+        P1,P2,P3,P4 = (np.zeros((n, n)) for _ in range(4))
+        P1[:-1,:-1] = p*trans
+        P2[:-1,1:] = (1-p)*trans
+        P3[1:,:-1] = (1-p)*trans
+        P4[1:,1:] = p*trans
         trans = P1 + P2 + P3 + P4
         trans[1:-1] /= 2
 
@@ -112,14 +116,43 @@ def markov_rouwenhorst(rho,sigma,N=7):
     ergodic = find_ergodic(trans)
 
     # d. scaling
-    s = np.linspace(-1, 1, N)
-    mean = np.sum(ergodic*s)
-    sigma_ = np.sqrt(np.sum(ergodic*(s-mean)**2))
-    s *= (sigma / sigma_)
+    grid_sd = np.sqrt(sigma**2/(1-rho**2))*np.sqrt(n-1)
+    grid = np.linspace(mu/(1-rho)-grid_sd,mu/(1-rho)+grid_sd,n)
 
-    y = np.exp(s) / np.sum(ergodic * np.exp(s))
+    # e. find cumsums
+    trans_cumsum = np.array([np.cumsum(trans[i,:]) for i in range(n)])
+    ergodic_cumsum = np.cumsum(ergodic)
 
-    return y, trans, ergodic
+    return grid,trans,ergodic,trans_cumsum,ergodic_cumsum
+
+def log_rouwenhorst(rho,sigma,n=7):
+    """Rouwenhorst method to discretize autoregressie process in logs 
+    with mean of one
+
+    Args:
+
+        rho (double): AR(1) coefficient
+        sigma (double): std. of shock
+        n (int): number of grid points
+
+    Returns:
+
+        grid (numpy.ndarray): grid
+        trans (numpy.ndarray): transition matrix
+        ergodic (numpy.ndarray): ergodic distribution
+        trans_cumsum (numpy.ndarray): transition matrix (cumsum)
+        ergodic_cumsum (numpy.ndarray): ergodic distribution (cumsum)
+
+    """
+
+    # a. standard
+    grid,trans,ergodic,trans_cumsum,ergodic_cumsum = rouwenhorst(0.0,rho,sigma,n)
+    
+    # b. take exp and ensure exact mean of one
+    grid = np.exp(grid)
+    grid /= np.sum(ergodic*grid)
+
+    return grid,trans,ergodic,trans_cumsum,ergodic_cumsum
 
 ###########
 # general #

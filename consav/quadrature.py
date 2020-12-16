@@ -98,7 +98,7 @@ def log_normal_gauss_hermite(sigma,n=7,mu=None):
         if mu is None:
             x = np.exp(np.zeros(n))
         else:
-            x = np.exp(np.zeros(n)+mu)
+            x = np.exp(np.zeros(n)+ np.log(mu))
         
         return x,w
 
@@ -109,9 +109,9 @@ def log_normal_gauss_hermite(sigma,n=7,mu=None):
 
     # b. adjust mean
     if mu is None:
-        x = np.exp(x - 0.5*sigma**2)
+        x = np.exp(x-0.5*sigma**2)
     else:
-        x = np.exp(x + mu)
+        x = np.exp(x+np.log(mu)-0.5*sigma**2)
 
     return x,w
 
@@ -144,11 +144,11 @@ def create_PT_shocks(sigma_psi,Npsi,sigma_xi,Nxi,pi=0,mu=None):
     # b. add low inncome shock
     if pi > 0:
          
-        # a. weights
+        # i. weights
         xi_w *= (1.0-pi)
         xi_w = np.insert(xi_w,0,pi)
 
-        # b. values
+        # ii. values
         xi = (xi-mu*pi)/(1.0-pi)
         xi = np.insert(xi,0,mu)
     
@@ -157,4 +157,3 @@ def create_PT_shocks(sigma_psi,Npsi,sigma_xi,Nxi,pi=0,mu=None):
     psi_w,xi_w = np.meshgrid(psi_w,xi_w,indexing='ij')
 
     return psi.ravel(),psi_w.ravel(),xi.ravel(),xi_w.ravel(),psi.size
-

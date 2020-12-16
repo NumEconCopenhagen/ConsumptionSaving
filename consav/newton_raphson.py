@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """newton_raphson
 
-Provides a Numba JIT compilled newton raphson optimizer for a custom objective function.
+Provides a Numba jit compilled newton raphson optimizer for a custom objective function.
 """
 
 import numpy as np

@@ -51,6 +51,11 @@ def setup_nlopt(vs_path=None,download=True,folder='',do_print=False):
     """
 
     vs_path = vs_path if not vs_path is None else find_vs_path()
+    dst = f'{os.getcwd()}/libnlopt-0.dll'
+
+    if os.path.isfile(dst):
+        print('nlopt is already installed')
+        return
 
     # a. download
     if download:
@@ -85,7 +90,6 @@ def setup_nlopt(vs_path=None,download=True,folder='',do_print=False):
     os.remove('compile_nlopt.bat')
 
     # f. copy
-    dst = f'{os.getcwd()}/libnlopt-0.dll'
     if os.path.isfile(dst): os.remove(dst)
     os.rename(f'{os.getcwd()}/{folder}nlopt-2.4.2-dll64/libnlopt-0.dll',dst)
 

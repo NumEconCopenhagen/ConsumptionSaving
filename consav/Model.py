@@ -43,7 +43,7 @@ class ModelClass():
             self.namespaces = []
             self.not_floats = []
             self.other_attrs = []
-            self.cpp = None
+            self.cpp = SimpleNamespace() # overwritten later
             self.cpp_filename = None
             self.cpp_options = {}
             self.cpp_structsmap = {}
@@ -118,7 +118,7 @@ class ModelClass():
             _scalar_or_ndarray = np.isscalar(val) or type(val) is np.ndarray
             assert _scalar_or_ndarray, f'{key} is not scalar or numpy array'
             
-            _non_float = not np.isscalar(val) or type(val) is str or type(val) is np.float or key in self.not_floats
+            _non_float = not np.isscalar(val) or type(val) is str or type(val) is np.float or type(val) is np.float64 or key in self.not_floats
             assert _non_float, f'{key} is {type(val)}, not float, but not on the list'
 
         for ns in self.namespaces:
@@ -190,7 +190,7 @@ class ModelClass():
         with open(f'{self.savefolder}/{self.name}.p', 'rb') as f:
             model_dict = pickle.load(f)
 
-        self.cpp = None
+        self.cpp = SimpleNamespace()
         
         # b. construct
         self.from_dict(model_dict)
@@ -211,7 +211,7 @@ class ModelClass():
         other.from_dict(model_dict,do_copy=True)
         other.update(kwargs)
         other.ns_jit_def = self.ns_jit_def
-        if not self.cpp is None:
+        if not type(self.cpp) is SimpleNamespace:
             other.link_to_cpp(force_compile=False)
 
         return other

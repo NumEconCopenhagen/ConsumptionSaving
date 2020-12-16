@@ -30,8 +30,8 @@ class jit():
     def __exit__(self, exc_type, exc_value, tb):
         """ swap back to normal namespaces and delete jitted namespaces """
 
-        if exc_type is not None:
-            traceback.print_exception(exc_type, exc_value, tb)
+        #if exc_type is not None:
+        #    traceback.print_exception(exc_type, exc_value, tb)
         
         model = self.model
         for ns in model.namespaces:
