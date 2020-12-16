@@ -1,442 +1,295 @@
 # -*- coding: utf-8 -*-
 """Model
 
-This module provides a class for consumption-saving models with methods for saving and loading
-and interfacing with C++. 
-
+Provides a class for consumption-saving models with methods for saving and loading
+and interfacing with numba jitted functions and C++.
 """
 
 import os
-import copy
-import ctypes as ct
+from copy import deepcopy
 import pickle
 from types import SimpleNamespace
+from collections import namedtuple
+
 import numpy as np
-import numba as nb
 
-from . import cpptools
-
-# for save/load
-def _filename(model):    
-    if model.solmethod is None:
-        return f'{model.name}'
-    else:
-        return f'{model.name}_{model.solmethod}'
-
-def _convert_to_dict(someclass,somelist):
-
-    if somelist is None:
-        return {}
-    elif len(somelist) > 0 and type(somelist[0]) is str:
-        keys = [var for var in somelist]
-    else:
-        keys = [var[0] for var in somelist]
-    values = [getattr(someclass,key) for key in keys]
-    return {key:val for key,val in zip(keys,values)}
-
-global_savelist =  ['compiler','not_float_list','parlist','sollist','simlist','vs_path','intel_path','intel_vs_version','savelist']
+from .cpptools import link_to_cpp
 
 # main
 class ModelClass():
     
     def __init__(self,name=None,
-                      solmethod=None,
-                      load=False,
-                      compiler='vs',**kwargs):
-        
+            load=False,from_dict=None,
+            setup_infrastruct=True,**kwargs):
         """ defines default attributes """
 
-        if name is None: raise Exception('name must be specified') 
+        if load: assert from_dict is None, 'dictionary should be be specified when loading'
+        assert not hasattr(self,'cpp'), 'the model can not have .cpp method'
 
-        # a. basic information
-        self.name = name # name of parametrization
-        self.solmethod = solmethod # solution methods
-        self.compiler = compiler # compiler
+        # a. name
+        if name is None: raise Exception('name must be specified')
+        self.name = name
 
-        # b. basic data structre
-        self.par = SimpleNamespace()
-        self.sol = SimpleNamespace()
-        self.sim = SimpleNamespace()        
+        # list of internal of attributes (used when saving)
+        self.internal_attrs = [
+            'savefolder','namespaces','not_floats','other_attrs',
+            'cpp_filename','cpp_options','cpp_structsmap']
 
-        # c. compiler information
-        self.vs_path = 'C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary/Build/'
-        self.intel_path = 'C:/Program Files (x86)/IntelSWTools/compilers_and_libraries_2018.5.274/windows/bin/'
-        self.intel_vs_version = 'vs2017'
+        # b. new or load
+        if (not load) and (from_dict is None): # new
+            
+            # i. empty containers
+            self.savefolder = 'saved' 
+            self.namespaces = []
+            self.not_floats = []
+            self.other_attrs = []
+            self.cpp = SimpleNamespace() # overwritten later
+            self.cpp_filename = None
+            self.cpp_options = {}
+            self.cpp_structsmap = {}
 
-        # d. misc
-        self.not_float_list = None
-        self.savelist = []
+            # ii. settings
+            assert hasattr(self,'settings'), 'The model must have defined an .settings() method'
+            self.settings()
 
-        # e. setup (including type inference)
-        self.setup()
-        for key,val in kwargs.items(): setattr(self.par,key,val)
-        self.allocate()
-        self.setup_subclasses()
+            # default to none
+            for attr in self.other_attrs:
+                if not hasattr(self,attr): setattr(self,attr,None)
 
-        # f. load
-        if load: 
+            self.par = SimpleNamespace()
+            self.sol = SimpleNamespace()
+            self.sim = SimpleNamespace()
+
+            for ns in self.namespaces:
+                setattr(self,ns,SimpleNamespace())
+
+            self.namespaces = self.namespaces + ['par','sol','sim']
+
+            # iii setup
+            assert hasattr(self,'setup'), 'The model must have defined an .setup() method'
+            self.setup()
+
+            # iv. update
+            self.update(kwargs)
+            
+            # vi. allocate
+            assert hasattr(self,'allocate'), 'The model must have defined an .allocate() method'
+            self.allocate()
+
+        elif load: # load
+            
+            self.settings()
             self.load()
-            for key,val in kwargs.items(): setattr(self.par,key,val)
+            self.update(kwargs)
 
-    def setup(self):
-        """ set independent variables in par, sol and sim """
+        else:
+            
+            self.from_dict(from_dict)
 
-        raise Exception('The model must have defined an .setup() method')
+        # c. infrastructure
+        if setup_infrastruct:
+            self.setup_infrastructure()
+    
+    def update(self,upd_dict):
+        """ update """
 
-    def allocate(self):
-        """ set dependent variables in par, sol and sim """
+        for nskey,values in upd_dict.items():
+            assert nskey in self.namespaces, f'{nskey} is not a namespace'
+            assert type(values) is dict, f'{nskey} must be dict'
+            for key,value in values.items():
+                assert hasattr(getattr(self,nskey),key), f'{key} is not in {nskey}' 
+                setattr(getattr(self,nskey),key,value)        
 
-        raise Exception('The model must have defined an .allocate() method')
+    ####################
+    ## infrastructure ##
+    ####################
 
-    def setup_subclasses(self):
-        """ setup jitted subclasses par, sol and sim with automatic type inference """
-
-        # a. convert to dictionaries
-        par_dict = self.par.__dict__
-        sol_dict = self.sol.__dict__
-        sim_dict = self.sim.__dict__
+    def setup_infrastructure(self):
+        """ setup infrastructure to call numba jit functions """
         
-        # b. infer types
+        # a. convert to dictionaries
+        ns_dict = {}
+        for ns in self.namespaces:
+            ns_dict[ns] = getattr(self,ns).__dict__
+
+        # b. type check
         def check(key,val):
 
-            assert np.isscalar(val) or type(val) is np.ndarray, f'{key} is not scalar or numpy array'
-            if self.not_float_list is None: raise Exception('The model must have a par.not_float_list = []')
-            if np.isscalar(val):
-                assert type(val) is np.float or key in self.not_float_list, f'{key} is {type(val)}, not float, but not on the list'
-
-            return val
-
-        parlist = [(key,nb.typeof(check(key,val))) for key,val in par_dict.items()]
-        sollist = [(key,nb.typeof(check(key,val))) for key,val in sol_dict.items()]
-        simlist = [(key,nb.typeof(check(key,val))) for key,val in sim_dict.items()]
-
-        # c. create subclasses
-        self.par,self.sol,self.sim = self.create_subclasses(parlist,sollist,simlist)
-
-        # d. set values
-        for key,val in par_dict.items(): setattr(self.par,key,val)
-        for key,val in sol_dict.items(): setattr(self.sol,key,val)
-        for key,val in sim_dict.items(): setattr(self.sim,key,val)
-
-    def create_subclasses(self,parlist,sollist,simlist):
-        """ create jitted subclasses par, sol, sim
-
-        Args:
-
-            parlist (list): list of parameters, grids etc. with elements (name, numba type)
-            sollist (list): list of solution variables with elements (name, numba type)
-            simlist (list): list of simulation variables with elements (name, numba type)
-        
-        Returns:
-
-            par (class): class with parameters, grids etc.
-            sol (class): class with solution variables
-            sim (class): class with simulation variables
-
-        """
-    
-        self.parlist = parlist
-        self.sollist = sollist
-        self.simlist = simlist
-
-        @nb.experimental.jitclass(self.parlist) # numba class with variables in parlist
-        class ParClass():
-            def __init__(self):
-                pass
-
-        @nb.experimental.jitclass(self.sollist) # numba jit class with variables in sollist
-        class SolClass():
-            def __init__(self):
-                pass
-
-        @nb.experimental.jitclass(self.simlist) # numba jit class with variables in simlist
-        class SimClass():
-            def __init__(self):
-                pass
-
-        return ParClass(),SolClass(),SimClass()
-
-    def get_par_dict(self):
-        """ get dictionary for the par subclass """
-        
-        return _convert_to_dict(self.par,self.parlist)
-
-    def get_sol_dict(self):
-        """ get dictionary for the sol subclass """
-        
-        return _convert_to_dict(self.sol,self.sollist)
-
-    def get_sim_dict(self):
-        """ get dictionary for the sim subclass """
-        
-        return _convert_to_dict(self.sim,self.simlist)
-
-    def save(self,drop_sol=False,drop_sim=False):
-        """ save the model parameters, the solution simulation variables """
-        
-        if not os.path.exists('data'):
-            os.makedirs('data')
-
-        # a. save parameters
-        par_dict = _convert_to_dict(self.par,self.parlist)
-        with open(f'data/{_filename(self)}_par.p', 'wb') as f:
-            pickle.dump(par_dict, f)
-
-        # b. solution
-        if drop_sol:
-            sol_dict = {}
-        else:
-            sol_dict = _convert_to_dict(self.sol,self.sollist)
-        np.savez(f'data/{_filename(self)}_sol.npz', **sol_dict)
-    
-        # c. simulation
-        if drop_sim:
-            sim_dict = {}
-        else:        
-            sim_dict = _convert_to_dict(self.sim,self.simlist)
-        np.savez(f'data/{_filename(self)}_sim.npz', **sim_dict)
-
-        # d. additional
-        for x in global_savelist: 
-            if not hasattr(self,x): setattr(self,x,None)
+            _scalar_or_ndarray = np.isscalar(val) or type(val) is np.ndarray
+            assert _scalar_or_ndarray, f'{key} is not scalar or numpy array'
             
-        additional_dict = _convert_to_dict(self,self.savelist + global_savelist)
-        with open(f'data/{_filename(self)}.p', 'wb') as f:
-            pickle.dump(additional_dict, f)        
+            _non_float = not np.isscalar(val) or type(val) is str or type(val) is np.float or type(val) is np.float64 or key in self.not_floats
+            assert _non_float, f'{key} is {type(val)}, not float, but not on the list'
+
+        for ns in self.namespaces:
+            for key,val in ns_dict[ns].items():
+                check(key,val)
+
+        # c. namedtuple (definitions)
+        self.ns_jit_def = {}
+        for ns in self.namespaces:
+            self.ns_jit_def[ns] = namedtuple(f'{ns.capitalize()}Class',[key for key in ns_dict[ns].keys()])
+
+    def update_jit(self):
+        """ update values and references in par_jit, sol_jit, sim_jit """
+
+        self.ns_jit = {}
+        for ns in self.namespaces:
+            self.ns_jit[ns] = self.ns_jit_def[ns](**getattr(self,ns).__dict__)
+
+    ####################
+    ## save-copy-load ##
+    ####################
+    
+    def all_attrs(self):
+        """ return all attributes """
+
+        return self.namespaces + self.other_attrs + self.internal_attrs
+
+    def as_dict(self,drop=[]):
+        """ return a dict version of the model """
+        
+        model_dict = {}
+        for attr in self.all_attrs():
+            if not attr in drop: model_dict[attr] = getattr(self,attr)
+
+        return model_dict
+
+    def from_dict(self,model_dict,do_copy=False):
+        """ construct the model from a dict version of the model """
+
+        self.namespaces = model_dict['namespaces']
+        self.other_attrs = model_dict['other_attrs']
+        for attr in self.all_attrs():
+            if attr in model_dict:
+                if do_copy:
+                    setattr(self,attr,deepcopy(model_dict[attr]))
+                else:
+                    setattr(self,attr,model_dict[attr])
+            else:
+                setattr(self,attr,None)
+
+    def save(self,drop=[]):
+        """ save the model """
+
+        # a. ensure path        
+        if not os.path.exists(self.savefolder):
+            os.makedirs(self.savefolder)
+
+        # b. create model dict
+        model_dict = self.as_dict(drop=drop)
+
+        # b. save to disc
+        with open(f'{self.savefolder}/{self.name}.p', 'wb') as f:
+            pickle.dump(model_dict, f)
+
+    def load(self):
+        """ load the model """
+
+        # a. load
+        with open(f'{self.savefolder}/{self.name}.p', 'rb') as f:
+            model_dict = pickle.load(f)
+
+        self.cpp = SimpleNamespace()
+        
+        # b. construct
+        self.from_dict(model_dict)
 
     def copy(self,name=None,**kwargs):
-        """ copy the model parameters, the solution simulation variables """
+        """ copy the model """
         
-        if name is None: name = f'{self.name}_copy' # if not
-        other = self.__class__(name=name,solmethod=self.solmethod,compiler=self.compiler)
+        # a. name
+        if name is None: name = f'{self.name}_copy'
+        
+        # b. model dict
+        model_dict = self.as_dict()
 
-        # a. save parameters
-        par_dict = _convert_to_dict(self.par,self.parlist)
-        for key,val in par_dict.items():
-            setattr(other.par,key,copy.copy(val))
+        # c. initialize
+        other = self.__class__(name=name)
 
-        # b. solution
-        sol_dict = _convert_to_dict(self.sol,self.sollist)
-        for key,val in sol_dict.items():
-            setattr(other.sol,key,copy.copy(val))
-    
-        # c. simulation
-        sim_dict = _convert_to_dict(self.sim,self.simlist)
-        for key,val in sim_dict.items():
-            setattr(other.sim,key,copy.copy(val))
-
-        # d. additional
-        for x in global_savelist: 
-            if not hasattr(self,x): setattr(self,x,None)
-
-        for key in self.savelist + global_savelist:
-            setattr(other,key,copy.deepcopy(getattr(self,key)))
-
-        # e. update
-        for key,val in kwargs.items():
-            setattr(other.par,key,val) # like par.key = val
+        # d. fill
+        other.from_dict(model_dict,do_copy=True)
+        other.update(kwargs)
+        other.ns_jit_def = self.ns_jit_def
+        if not type(self.cpp) is SimpleNamespace:
+            other.link_to_cpp(force_compile=False)
 
         return other
 
-    def load(self):
-        """ load the model parameters and solution and simulation variables"""
-
-        # a. parameters
-        with open(f'data/{_filename(self)}_par.p', 'rb') as f:
-            par_dict = pickle.load(f)
-        for key,val in par_dict.items():
-            setattr(self.par,key,val)
-
-        # b. solution
-        with np.load(f'data/{_filename(self)}_sol.npz') as data:
-            for key in data.files:
-                setattr(self.sol,key,data[key])
-
-        # c. solution
-        with np.load(f'data/{_filename(self)}_sim.npz') as data:
-            for key in data.files:
-                setattr(self.sim,key,data[key])
-
-        # d. additional
-        filesavelist = f'data/{_filename(self)}.p'
-        if os.path.isfile(filesavelist):
-            with open(filesavelist, 'rb') as f:
-                additional_dict = pickle.load(f)
-            for key,val in additional_dict.items():
-                setattr(self,key,val)
+    ##########
+    ## print #
+    ##########
 
     def __str__(self):
         """ called when model is printed """ 
         
-        def print_list(class_,list_):
+        def print_items(sn):
+            """ print items in SimpleNamespace """
 
             description = ''
-
-            keys = [var[0] for var in list_]
-            values = [getattr(class_,key) for key in keys]
-
             nbytes = 0
-            for var,val in zip(list_,values):    
-                if np.isscalar(val) and not var[1] == nb.boolean:
-                    description += f' {var[0]} = {val} [{var[1]}]\n'
-                elif var[1] == nb.boolean:
+
+            for key,val in sn.__dict__.items():
+
+                if np.isscalar(val) and not type(val) is np.bool:
+                    description += f' {key} = {val} [{type(val).__name__}]\n'
+                elif type(val) is np.bool:
                     if val:
-                        description += f' {var[0]} = True\n'
+                        description += f' {key} = True\n'
                     else:
-                        description += f' {var[0]} = False\n'
-                elif type(var[1]) is nb.types.npytypes.Array:
-                    description += f' {var[0]} = {var[1]} with shape = {val.shape}\n'            
+                        description += f' {key} = False\n'
+                elif type(val) is np.ndarray:
+                    description += f' {key} = ndarray with shape = {val.shape} [dtype: {val.dtype}]\n'            
                     nbytes += val.nbytes
                 else:                
-                    description += f' {var[0]} = ?\n'
+                    description += f' {key} = ?\n'
 
-            description += f'memory, gb: {nbytes/(10**9):.1f}\n' 
+            description += f' memory, gb: {nbytes/(10**9):.1f}\n' 
             return description
 
-        description = f'Modelclass: {self.__class__.__name__}\n\n'
+        description = f'Modelclass: {self.__class__.__name__}\n'
+        description += f'Name: {self.name}\n\n'
 
-        description += 'Parameters:\n'
-        description += print_list(self.par,self.parlist)
-        description += '\n'
+        description += 'namespaces: ' + str(self.namespaces) + '\n'
+        description += 'other_attrs: ' + str(self.other_attrs) + '\n'
+        description += 'savefolder: ' + str(self.savefolder) + '\n'
+        description += 'not_floats: ' + str(self.not_floats) + '\n'
 
-        description += 'Solution:\n'
-        description += print_list(self.sol,self.sollist)
-        description += '\n'
-
-        description += 'Simulation:\n'
-        description += print_list(self.sim,self.simlist)
+        for ns in self.namespaces:
+            description += '\n'
+            description += f'{ns}:\n'
+            description += print_items(getattr(self,ns))
 
         return description 
 
     #######################
     ## interact with cpp ##
     #######################
-    
-    def setup_cpp(self,use_nlopt=False):
-        """ setup interface to cpp files 
+
+    def link_to_cpp(self,force_compile=True,do_print=False):
+        """ link to C++ file """
+
+        # a. unpack
+        filename = self.cpp_filename
+        options = self.cpp_options
         
-        Args:
+        def structname(ns):
 
-            compiler (str,optional): compiler choice (vs or intel)
-            use_nlopt (bool,optional): use NLopt optimizer
-
-        """
-
-        # a. setup NLopt
-        if not os.path.isfile(f'{os.getcwd()}/libnlopt-0.dll'):
-            cpptools.setup_nlopt(vs_path=self.vs_path)
-            
-        # b. dictionary of cppfiles
-        self.cppfiles = dict()
-
-        # c. ctypes version of par and sol classes
-        self.parcpp = cpptools.setup_struct(self.parlist,'par_struct','cppfuncs//par_struct.cpp')
-        self.solcpp = cpptools.setup_struct(self.sollist,'sol_struct','cppfuncs//sol_struct.cpp')
-        self.simcpp = cpptools.setup_struct(self.simlist,'sim_struct','cppfuncs//sim_struct.cpp')
-
-    def link_cpp(self,filename,funcspecs,do_compile=True,do_print=False):
-        """ link C++ library
-        
-        Args:
-
-            filename (str): path to .dll file (no .dll extension!)
-            funcspecs (list): list of function names and (optionally) arguments
-            do_compile (bool): compile from .cpp to .dll
-            do_print (bool): print if succesfull
-
-        """
-
-        use_openmp_with_vs = False
-
-        # a. compile
-        if do_compile:
-
-            cpptools.compile('cppfuncs//' + filename,
-                compiler=self.compiler,
-                vs_path=self.vs_path,
-                intel_path=self.intel_path, 
-                intel_vs_version=self.intel_vs_version, 
-                do_print=do_print)
-
-        # b. function list
-        funcs = []
-        for funcspec in funcspecs:
-            if type(funcspec) == str:
-                funcs.append( (funcspec,[ct.POINTER(self.parcpp),ct.POINTER(self.solcpp),ct.POINTER(self.simcpp)]) )
+            if ns in self.cpp_structsmap:
+                return self.cpp_structsmap[ns]
             else:
-                funcs.append(funcspec)
-        
-        if self.compiler == 'vs': 
-            funcs.append(('setup_omp',[]))
-            use_openmp_with_vs = True
+                return f'{ns}_struct'
+              
+        structsmap = {structname(ns):getattr(self,ns) for ns in self.namespaces}
 
-        # c. link
-        self.cppfiles[filename] = cpptools.link(filename,funcs,use_openmp_with_vs=use_openmp_with_vs,do_print=do_print)
-                
-    def delink_cpp(self,filename,do_print=False,do_remove=True):
-        """ delink cpp library
-        
-        Args:
-            filename (str): path to .dll file (no .dll extension!).
-            do_print (bool,optional): print if successfull    
-            do_remove (bool,optional): remove dll file after delinking
-                    
-         """
+        # b. link to C++
+        self.cpp = link_to_cpp(filename,force_compile=force_compile,options=options,
+            structsmap=structsmap,do_print=do_print)
 
-        cpptools.delink(self.cppfiles[filename],filename,do_print=do_print,do_remove=do_remove)
+    ############
+    # clean-up #
+    ############
 
-    def call_cpp(self,filename,funcname):
-        """ call c++ function in linked c++ library
-        
-        Args:
-        
-            filename (str): path to .cpp file (no .cpp extension!).
-            funcname (str): print if successfull    
-        
-        """ 
-            
-        p_par = cpptools.get_struct_pointer(self.par,self.parcpp)
-        p_sol = cpptools.get_struct_pointer(self.sol,self.solcpp)
-        p_sim = cpptools.get_struct_pointer(self.sim,self.simcpp)
-        
-        funcnow = getattr(self.cppfiles[filename],funcname)
-        funcnow(p_par,p_sol,p_sim)
-    
-    ##############
-    ## run file ##
-    ##############
+    def __del__(self):
 
-    def write_run_file(self,filename='run.py',name='',solmethod='',method='',**kwargs):
-        """ call c++ function in linked c++ library
-        
-        Args:
-        
-            filename (str,optional): name of run fil
-            name (str,optional): name of instance
-            solmethod (str,optional): solutionmethod
-            method (str,optional): method to call in run file
-            **kwargs: parameters to be updated from baseline
-        
-        """ 
-
-        modulename = self.__class__.__module__
-        modelname = self.__class__.__name__
-
-        if name == '':
-            name = self.name
-
-        if solmethod == '':
-            solmethod = self.solmethod
-
-        if method == '':
-            method = 'solve'
-
-        with open(f'{filename}', 'w') as txtfile:
-            
-            txtfile.write(f'from {modulename} import {modelname}\n')
-            txtfile.write('updpar = dict()\n')
-            for key,val in kwargs.items():
-                txtfile.write(f'updpar["{key}"] = {val}\n')
-
-            txtfile.write(f'model = {modelname}(name="{name}",solmethod="{solmethod}",**updpar)\n')
-            txtfile.write(f'model.{method}()\n')
+        if hasattr(self.cpp,'cppfile'): self.cpp.delink()            

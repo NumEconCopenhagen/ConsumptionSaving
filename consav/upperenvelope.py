@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """upperenvelope
 
-This module provides a Numba JIT compilled upper envelope for a custom utility function.
+Provides a Numba jit compilled upper envelope for a custom utility function.
 """
 
 import numpy as np
