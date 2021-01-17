@@ -9,10 +9,11 @@ import traceback
 
 class jit(): 
 
-    def __init__(self,model): 
+    def __init__(self,model,show_exc=False): 
         """ load namespace references """
 
         self.model = model
+        self.show_exc = show_exc
         for ns in model.namespaces:
             setattr(self,ns,getattr(model,ns))
       
@@ -30,8 +31,8 @@ class jit():
     def __exit__(self, exc_type, exc_value, tb):
         """ swap back to normal namespaces and delete jitted namespaces """
 
-        #if exc_type is not None:
-        #    traceback.print_exception(exc_type, exc_value, tb)
+        if exc_type is not None and self.show_exc:
+            traceback.print_exception(exc_type, exc_value, tb)
         
         model = self.model
         for ns in model.namespaces:

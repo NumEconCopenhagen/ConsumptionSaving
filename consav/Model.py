@@ -3,6 +3,7 @@
 
 Provides a class for consumption-saving models with methods for saving and loading
 and interfacing with numba jitted functions and C++.
+
 """
 
 import os
@@ -36,14 +37,15 @@ class ModelClass():
             'cpp_filename','cpp_options','cpp_structsmap']
 
         # b. new or load
+        self.savefolder = 'saved'
+
         if (not load) and (from_dict is None): # new
             
             # i. empty containers
-            self.savefolder = 'saved' 
             self.namespaces = []
             self.not_floats = []
             self.other_attrs = []
-            self.cpp = SimpleNamespace() # overwritten later
+            self.cpp = SimpleNamespace() # overwritten later, helps linter (not internal attribute)
             self.cpp_filename = None
             self.cpp_options = {}
             self.cpp_structsmap = {}
@@ -56,14 +58,14 @@ class ModelClass():
             for attr in self.other_attrs:
                 if not hasattr(self,attr): setattr(self,attr,None)
 
-            self.par = SimpleNamespace()
-            self.sol = SimpleNamespace()
-            self.sim = SimpleNamespace()
+            self.par = SimpleNamespace() # -> helps linter
+            self.sol = SimpleNamespace() # -> helps linter
+            self.sim = SimpleNamespace() # -> helps linter
 
             for ns in self.namespaces:
                 setattr(self,ns,SimpleNamespace())
 
-            self.namespaces = self.namespaces + ['par','sol','sim']
+            self.namespaces = list(set(self.namespaces + ['par','sol','sim']))
 
             # iii setup
             assert hasattr(self,'setup'), 'The model must have defined an .setup() method'
@@ -115,8 +117,8 @@ class ModelClass():
         # b. type check
         def check(key,val):
 
-            _scalar_or_ndarray = np.isscalar(val) or type(val) is np.ndarray
-            assert _scalar_or_ndarray, f'{key} is not scalar or numpy array'
+            _scalar_or_ndarray = np.isscalar(val) or type(val) is np.ndarray or type(val) is np.memmap
+            assert _scalar_or_ndarray, f'{key} is not scalar or numpy arraym but {type(val)}'
             
             _non_float = not np.isscalar(val) or type(val) is str or type(val) is np.float or type(val) is np.float64 or key in self.not_floats
             assert _non_float, f'{key} is {type(val)}, not float, but not on the list'
@@ -292,4 +294,5 @@ class ModelClass():
 
     def __del__(self):
 
-        if hasattr(self.cpp,'cppfile'): self.cpp.delink()            
+        if hasattr(self,'cpp') and (not type(self.cpp) is SimpleNamespace):
+            self.cpp.delink()            
