@@ -151,7 +151,7 @@ def get_pointers(pythonobj,ctstruct):
                 raise Exception(f'{key} is not an integer')
 
         elif isinstance(field[1](),ct.POINTER(ct.c_long)):
-            assert np.issubdtype(val.dtype, np.int_)
+            assert np.issubdtype(val.dtype, np.int_), f'field = {field}'
             setattr(p_ctstruct,key,np.ctypeslib.as_ctypes(val.ravel()[0:1])) 
             # why [0:1]? hack to avoid bug for arrays with more elements than highest int32
 
@@ -162,7 +162,7 @@ def get_pointers(pythonobj,ctstruct):
                 raise Exception(f'{key} is not a floating point')
 
         elif isinstance(field[1](),ct.POINTER(ct.c_double)):
-            assert np.issubdtype(val.dtype, np.float_)
+            assert np.issubdtype(val.dtype, np.float_), f'field = {field}'
             setattr(p_ctstruct,key,np.ctypeslib.as_ctypes(val.ravel()[0:1]))
             # why [0:1]? hack to avoid bug for arrays with more elements than highest int32
         
@@ -170,12 +170,12 @@ def get_pointers(pythonobj,ctstruct):
             setattr(p_ctstruct,key,val)
 
         elif isinstance(field[1](),ct.POINTER(ct.c_bool)):
-            assert np.issubdtype(val.dtype, np.bool_)
+            assert np.issubdtype(val.dtype, np.bool_), f'field = {field}'
             setattr(p_ctstruct,key,np.ctypeslib.as_ctypes(val.ravel()[0:1]))
             # why [0:1]? hack to avoid bug for arrays with more elements than highest int32            
         
         elif isinstance(field[1](),ct.c_char_p):
-            assert type(val) is str
+            assert type(val) is str, f'field = {field}'
             setattr(p_ctstruct,key,val.encode())
 
         else:

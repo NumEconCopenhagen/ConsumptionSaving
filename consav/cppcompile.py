@@ -83,9 +83,9 @@ def setup_nlopt(vs_path=None,download=True,folder='',do_print=False):
     # e. call .bat
     result = os.system('compile_nlopt.bat')
     if result == 0:
-        if do_print: print('nlopt setup done')
+        if do_print: print('NLopt setup done')
     else: 
-        raise ValueError('nlopt setup failed')
+        raise ValueError('NLopt setup failed')
 
     os.remove('compile_nlopt.bat')
 
@@ -176,6 +176,9 @@ def compile(filename,options={},do_print=False):
     """
     
     set_default_options(options)
+
+    if options['compiler'] == 'vs' and options['vs_path'] is None:
+        options['vs_path'] = find_vs_path()
 
     compiler = options['compiler']
     vs_path = options['vs_path']

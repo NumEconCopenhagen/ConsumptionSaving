@@ -32,6 +32,7 @@ def find_all_filenames(filename,do_print=False):
 
     """
 
+    first = True
     if do_print: print(f'\n### finding all included files ###\n')
 
     dirname = os.path.dirname(filename)
