@@ -38,7 +38,7 @@ def write_setup_omp():
         cppfile.write('SetEnvironmentVariable("OMP_WAIT_POLICY", "passive");\n')
         cppfile.write('}\n')
 
-def setup_nlopt(vs_path=None,download=True,folder='',do_print=False):
+def setup_nlopt(vs_path=None,download=True,folder='',force_copy=True,do_print=False):
     """download and setup nlopt
 
     Args:
@@ -52,8 +52,9 @@ def setup_nlopt(vs_path=None,download=True,folder='',do_print=False):
 
     vs_path = vs_path if not vs_path is None else find_vs_path()
     dst = f'{os.getcwd()}/libnlopt-0.dll'
+    lib = f'{os.getcwd()}/{folder}nlopt-2.4.2-dll64/libnlopt-0.lib'
 
-    if os.path.isfile(dst):
+    if os.path.isfile(dst) and os.path.isfile(lib):
         print('nlopt is already installed')
         return
 
@@ -90,8 +91,9 @@ def setup_nlopt(vs_path=None,download=True,folder='',do_print=False):
     os.remove('compile_nlopt.bat')
 
     # f. copy
-    if os.path.isfile(dst): os.remove(dst)
-    os.rename(f'{os.getcwd()}/{folder}nlopt-2.4.2-dll64/libnlopt-0.dll',dst)
+    if os.path.isfile(dst) and force_copy: os.remove(dst)
+    if not os.path.isfile(dst) or force_copy:
+        os.rename(f'{os.getcwd()}/{folder}nlopt-2.4.2-dll64/libnlopt-0.dll',dst)
 
     # g. remove zip file
     if download: os.remove(nloptzip) 
