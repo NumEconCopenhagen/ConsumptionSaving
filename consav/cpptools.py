@@ -9,7 +9,7 @@ import ctypes as ct
 import re
 import numpy as np
 
-from .cppcompile import compile, set_default_options, setup_nlopt
+from .cppcompile import compile, set_default_options, setup_nlopt, setup_tasmanian, setup_alglib
 from .cppstruct import setup_struct, get_struct_pointer
 
 #################
@@ -70,8 +70,8 @@ def analyze_cpp(funcs,filename,structnames=[],do_print=False):
     if do_print: print(f'### analyzing {filename} ###\n')
 
     # a. allowed types
-    all_restypes = ['void','double','int','bool']
-    all_argtypes = ['double*','double','int*','int','bool*','bool','char*','char'] 
+    all_restypes = ['void','double','int','bool','void*']
+    all_argtypes = ['double*','double','int*','int','bool*','bool','char*','char','void*'] 
     all_argtypes += [f'{structname}*' for structname in structnames]
 
     # b. retrieve code
@@ -90,7 +90,11 @@ def analyze_cpp(funcs,filename,structnames=[],do_print=False):
         restype = re.search(r'EXPORT\s+.*?\s+',func_str).group(0).replace('EXPORT','').replace(' ','')
 
         # ii. function name
-        funcname = re.search(fr'{restype} .*?\(',func_str).group(0).replace(restype,'').replace('(','').replace(' ','')
+        if restype == 'void*': 
+            restype_ = r'void\*'
+        else:
+            restype_ = restype 
+        funcname = re.search(fr'{restype_} .*?\(',func_str).group(0).replace(restype,'').replace('(','').replace(' ','')
         
         # iii. argument types
         argtypes = []
@@ -212,9 +216,11 @@ class link_to_cpp():
 
         # e. link
 
-        # NLopt hack
+        # NLopt and tasmanian hacks
         do_nlopt = os.path.isfile(self.options['nlopt_lib'])
+        do_tasmanian = os.path.isfile(self.options['tasmanian_lib'])
         if do_nlopt: nloptfile = ct.cdll.LoadLibrary(f'{os.getcwd()}/libnlopt-0.dll')
+        if do_tasmanian: tasmanianfile = ct.cdll.LoadLibrary(f'{os.getcwd()}/libtasmaniansparsegrid.dll')
 
         # load
         self.cppfile = ct.cdll.LoadLibrary(self.dllfilename)
@@ -228,6 +234,7 @@ class link_to_cpp():
         
         # NLopt hack
         if do_nlopt: self.delink(cppfile=nloptfile,do_print=False)
+        if do_tasmanian: self.delink(cppfile=tasmanianfile,do_print=False)
 
         # set types
         self.set_types()
@@ -262,7 +269,9 @@ class link_to_cpp():
                 elif argtype_raw == 'bool':
                     argtype = ct.c_bool
                 elif argtype_raw == 'char*':
-                    argtype = ct.c_char_p                
+                    argtype = ct.c_char_p
+                elif argtype_raw == 'void*':
+                    argtype = ct.c_void_p                                 
                 else:
                     raise Exception(f'argument type {argtype_raw} not allowed')
                 
@@ -277,6 +286,8 @@ class link_to_cpp():
                 restype = ct.c_double
             elif restype_raw == 'bool':
                 restype = ct.c_bool
+            elif restype_raw == 'void*':
+                restype = ct.c_void_p                
             else:
                 raise Exception(f'return type {restype_raw} not allowed')
 
@@ -355,6 +366,8 @@ class link_to_cpp():
                 p_arg = arg
             elif argtype_raw == 'char*':
                 p_arg = arg.encode()
+            elif argtype_raw == 'void*':
+                p_arg = arg                
             else:
                 raise Exception(f'unknown argument {argtype_raw} with type {argtype_raw}')
 
