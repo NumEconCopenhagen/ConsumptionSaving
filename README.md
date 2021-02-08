@@ -29,6 +29,11 @@ The package can be installed with
 pip install git+https://github.com/NumEconCopenhagen/ConsumptionSaving
 ```
 
+**Requirements:** 
+
+1. `python >= 3.8`
+2. `numba >= 0.52`
+
 # Development
 
 To develop the package follow these steps:
