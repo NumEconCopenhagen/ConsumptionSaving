@@ -64,6 +64,56 @@ def interp_2d(grid1,grid2,value,xi1,xi2):
 
     return _interp_2d(grid1,grid2,value,xi1,xi2,j1,j2)
 
+@njit(double(int32[:],double[:],double[:],double[:,:],double,double),fastmath=True)
+def interp_2d_to_rep(js,grid1,grid2,value,xi1,xi2):
+    """ 2d interpolation for one point (with later repition without search)
+        
+    Args:
+
+        js (numpy.nddarray): information on search
+        grid1 (numpy.ndarray): 1d grid
+        grid2 (numpy.ndarray): 1d grid
+        value (numpy.ndarray): value array (2d)
+        xi1 (double): input point
+        xi2 (double): input point
+
+    Returns:
+
+        yi (double): output
+
+    """
+
+    # a. search in each dimension
+    js[0] = j1 = binary_search(0,grid1.size,grid1,xi1)
+    js[1] = j2 = binary_search(0,grid2.size,grid2,xi2)
+
+    return _interp_2d(grid1,grid2,value,xi1,xi2,j1,j2)
+
+@njit(double(int32[:],double[:],double[:],double[:,:],double,double),fastmath=True)
+def interp_2d_from_rep(js,grid1,grid2,value,xi1,xi2):
+    """ 2d interpolation for one point without search
+        
+    Args:
+
+        js (numpy.nddarray): information on search
+        grid1 (numpy.ndarray): 1d grid
+        grid2 (numpy.ndarray): 1d grid
+        value (numpy.ndarray): value array (2d)
+        xi1 (double): input point
+        xi2 (double): input point
+
+    Returns:
+
+        yi (double): output
+
+    """
+
+    # a. search in each dimension
+    j1 = js[0]
+    j2 = js[1]
+
+    return _interp_2d(grid1,grid2,value,xi1,xi2,j1,j2)
+
 @njit(void(double[:],double[:],double[:,:],double[:],double[:],double[:]),fastmath=True)
 def interp_2d_vec(grid1,grid2,value,xi1,xi2,yi):
     """ 2d interpolation for vector of points
@@ -107,31 +157,6 @@ def interp_2d_prep(grid1,xi1,Nyi):
     prep[Nyi+0] = j1
 
     return prep
-
-@njit(double(int32[:],double[:],double[:],double[:,:],double,double),fastmath=True)
-def interp_2d_only_last(prep,grid1,grid2,value,xi1,xi2):
-    """ 2d interpolation of only last dimension
-        
-    Args:
-
-        prep (numpy.ndarray): information for remaining operations
-        grid1 (numpy.ndarray): 1d grid
-        grid2 (numpy.ndarray): 1d grid
-        value (numpy.ndarray): value array (2d)
-        xi1 (double): input point
-        xi2 (double): input point
-
-    Returns:
-
-        yi (double): output
-
-    """
-
-    # a. search in last dimension
-    j1 = prep[0]
-    j2 = binary_search(0,grid2.size,grid2,xi2)
-    
-    return _interp_2d(grid1,grid2,value,xi1,xi2,j1,j2)
 
 @njit(void(int32[:],double[:],double[:],double[:,:],double,double[:],double[:],boolean,boolean),fastmath=True)
 def _interp_2d_only_last_vec(prep,grid1,grid2,value,xi1,xi2,yi,monotone,search):

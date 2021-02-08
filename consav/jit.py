@@ -9,7 +9,7 @@ import traceback
 
 class jit(): 
 
-    def __init__(self,model,show_exc=False): 
+    def __init__(self,model,show_exc=True): 
         """ load namespace references """
 
         self.model = model
