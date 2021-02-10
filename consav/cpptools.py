@@ -150,6 +150,9 @@ class link_to_cpp():
 
         """
 
+        if 'nlopt_lib' in options: raise Exception('nlopt_lib is interally specified')
+        if 'tasmanian_lib' in options: raise Exception('tasmanian_lib is interally specified')
+
         assert os.path.isfile(filename), f'"{filename}" does not exist'
         if do_print: print(f'Linking to: {filename}')
 
@@ -209,6 +212,9 @@ class link_to_cpp():
         else:
             self.dllfilename = f'{os.getcwd()}/{self.filename_raw}.dll'
 
+        self.options['nlopt_lib'] = f'{self.dirname}/nlopt-2.4.2-dll64/libnlopt-0.lib'
+        self.options['tasmanian_lib'] = f'{self.dirname}/TASMANIAN-7.0/lib/tasmaniansparsegrid.lib'
+
         if not os.path.isfile(self.dllfilename) or force_compile:
             compile(self.filename,options=self.options,do_print=do_print)
         else:
@@ -216,11 +222,11 @@ class link_to_cpp():
 
         # e. link
 
-        # NLopt and tasmanian hacks
+        # NLopt and tasmanian hacks - begin
         do_nlopt = os.path.isfile(self.options['nlopt_lib'])
         do_tasmanian = os.path.isfile(self.options['tasmanian_lib'])
-        if do_nlopt: nloptfile = ct.cdll.LoadLibrary(f'{os.getcwd()}/libnlopt-0.dll')
-        if do_tasmanian: tasmanianfile = ct.cdll.LoadLibrary(f'{os.getcwd()}/libtasmaniansparsegrid.dll')
+        if do_nlopt: nloptfile = ct.cdll.LoadLibrary(f'{self.dirname}/nlopt-2.4.2-dll64/libnlopt-0.dll')
+        if do_tasmanian: tasmanianfile = ct.cdll.LoadLibrary(f'{self.dirname}/TASMANIAN-7.0/bin/tasmaniansparsegrid.dll')
 
         # load
         self.cppfile = ct.cdll.LoadLibrary(self.dllfilename)
@@ -232,7 +238,7 @@ class link_to_cpp():
             self.delink()
             self.cppfile = ct.cdll.LoadLibrary(self.dllfilename)
         
-        # NLopt hack
+        # NLopt and tasmanian hacks - end
         if do_nlopt: self.delink(cppfile=nloptfile,do_print=False)
         if do_tasmanian: self.delink(cppfile=tasmanianfile,do_print=False)
 
@@ -361,7 +367,7 @@ class link_to_cpp():
             if (argtype_raw_struct := argtype_raw.replace('*','')) in self.structs:
                 p_arg = get_struct_pointer(arg,self.structs[argtype_raw_struct])
             elif argtype_raw in ['int*','double*','bool*']:
-                p_arg = np.ctypeslib.as_ctypes(arg)
+                p_arg = np.ctypeslib.as_ctypes(arg.ravel())
             elif argtype_raw in ['double','int','bool']:
                 p_arg = arg
             elif argtype_raw == 'char*':

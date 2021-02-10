@@ -38,7 +38,7 @@ def write_setup_omp():
         cppfile.write('SetEnvironmentVariable("OMP_WAIT_POLICY", "passive");\n')
         cppfile.write('}\n')
 
-def setup_nlopt(vs_path=None,download=True,unzip=False,folder='cppfuncs/',force_copy=True,do_print=False):
+def setup_nlopt(vs_path=None,download=True,unzip=False,folder='cppfuncs/',do_print=False):
     """download and setup nlopt
 
     Args:
@@ -47,16 +47,14 @@ def setup_nlopt(vs_path=None,download=True,unzip=False,folder='cppfuncs/',force_
         download (bool,optional): download nlopt 2.4.2
         unzip (bool,optional): unzip even if not downloaded
         folder (str,optional): folder to put nlopt to
-        force_copy (bool,optional): force overwrite of .dll
         do_print (bool,optional): print progress
 
     """
 
     vs_path = vs_path if not vs_path is None else find_vs_path()
-    dst = f'{os.getcwd()}/libnlopt-0.dll'
-    lib = f'{os.getcwd()}/{folder}nlopt-2.4.2-dll64/libnlopt-0.lib'
 
-    if os.path.isfile(dst) and os.path.isfile(lib):
+    nloptfolder = f'{folder}nlopt-2.4.2-dll64/'
+    if os.path.isdir(nloptfolder):
         if do_print: print('nlopt already installed')
         return
 
@@ -91,15 +89,7 @@ def setup_nlopt(vs_path=None,download=True,unzip=False,folder='cppfuncs/',force_
 
     os.remove('compile_nlopt.bat')
 
-    # f. copy
-    if os.path.isfile(dst) and force_copy: os.remove(dst)
-    if not os.path.isfile(dst) or force_copy:
-        os.rename(f'{os.getcwd()}/{folder}nlopt-2.4.2-dll64/libnlopt-0.dll',dst)
-
-    # g. remove zip file
-    if download or unzip: os.remove(zipfilename) 
-
-def setup_tasmanian(vs_path=None,download=True,unzip=False,folder='cppfuncs/',force_copy=True,do_print=False):
+def setup_tasmanian(vs_path=None,download=True,unzip=False,folder='cppfuncs/',do_print=False):
     """download and setup nlopt
 
     Args:
@@ -108,57 +98,27 @@ def setup_tasmanian(vs_path=None,download=True,unzip=False,folder='cppfuncs/',fo
         download (bool,optional): download Tasmanian 5.1
         unzip (bool,optional): unzip even if not downloaded
         folder (str,optional): folder to put Tasmanian to
-        force_copy (bool,optional): force overwrite of .dll
         do_print (bool,optional): print progress
 
     """
 
     vs_path = vs_path if not vs_path is None else find_vs_path()
-    dst = f'{os.getcwd()}/libtasmaniansparsegrid.dll'
-    lib = f'{os.getcwd()}/{folder}TASMANIAN-5.1/libtasmaniansparsegrid.lib'
 
-    if os.path.isfile(dst) and os.path.isfile(lib):
+    tasmanianfolder = f'{os.getcwd()}/{folder}TASMANIAN-7.0/'
+    if os.path.isdir(tasmanianfolder):
         if do_print: print('Tasmanian already installed')
         return
 
     # a. download
-    zipfilename = os.path.abspath(f'{os.getcwd()}/{folder}TASMANIAN-5.1.zip') 
+    zipfilename = os.path.abspath(f'{os.getcwd()}/{folder}TASMANIAN-7.0.zip') 
     if download:
-        url = 'https://github.com/ORNL/TASMANIAN/archive/v5.1.zip'
+        url = 'https://github.com/JeppeDruedahl/TASMANIAN/raw/main/TASMANIAN-7.0.zip'
         urllib.request.urlretrieve(url,zipfilename)
         
     # b. unzip
     if download or unzip:
         with zipfile.ZipFile(zipfilename) as file:
             file.extractall(f'{os.getcwd()}/{folder}')        
-
-    # c. setup string
-    pwd_str = f'cd /d "{os.getcwd()}/{folder}TASMANIAN-5.1/"\n'    
-    path_str = f'cd /d "{vs_path}"\n'
-    version_str = 'call vcvarsall.bat x64\n'
-    setup_str = 'call WindowsMake.bat'
-
-    # d. write .bat
-    lines = [path_str,version_str,pwd_str,setup_str]
-    with open('compile_tasmanian.bat', 'w') as txtfile:
-        txtfile.writelines(lines)
-
-    # e. call .bat
-    result = os.system('compile_tasmanian.bat')
-    if result == 0:
-        if do_print: print('tasmanian successfully installed')
-    else: 
-        raise ValueError('tasmanian installation failed')
-
-    os.remove('compile_tasmanian.bat')
-
-    # f. copy
-    if os.path.isfile(dst) and force_copy: os.remove(dst)
-    if not os.path.isfile(dst) or force_copy:
-        os.rename(f'{os.getcwd()}/{folder}Tasmanian-5.1/libtasmaniansparsegrid.dll',dst)
-
-    # g. remove zip file
-    if download or unzip: os.remove(zipfilename)
 
 def setup_alglib(download=True,unzip=False,folder='cppfuncs/',do_print=False):
     """download and setup alglib
@@ -185,10 +145,7 @@ def setup_alglib(download=True,unzip=False,folder='cppfuncs/',do_print=False):
     # b. unzip
     if download or unzip:
         with zipfile.ZipFile(zipfilename) as file:
-            file.extractall(f'{os.getcwd()}/{folder}alglib-3.17.0')        
-
-    # c. remove zip file
-    if download or unzip: os.remove(zipfilename)
+            file.extractall(f'{os.getcwd()}/{folder}alglib-3.17.0')
 
     if do_print: print('alglib succesfully installed')
 
@@ -292,7 +249,7 @@ def compile(filename,options={},do_print=False):
     assert os.path.isfile(filename), f'"{filename}" does not exist'
 
     basename = os.path.basename(filename)
-    dirname = os.path.dirname(filename)
+    _dirname = os.path.dirname(filename)
 
     # b. prepare visual studio
     if compiler == 'vs':
