@@ -150,9 +150,6 @@ class link_to_cpp():
 
         """
 
-        if 'nlopt_lib' in options: raise Exception('nlopt_lib is interally specified')
-        if 'tasmanian_lib' in options: raise Exception('tasmanian_lib is interally specified')
-
         assert os.path.isfile(filename), f'"{filename}" does not exist'
         if do_print: print(f'Linking to: {filename}')
 
@@ -212,8 +209,11 @@ class link_to_cpp():
         else:
             self.dllfilename = f'{os.getcwd()}/{self.filename_raw}.dll'
 
-        self.options['nlopt_lib'] = f'{self.dirname}/nlopt-2.4.2-dll64/libnlopt-0.lib'
-        self.options['tasmanian_lib'] = f'{self.dirname}/TASMANIAN-7.0/lib/tasmaniansparsegrid.lib'
+        if not 'nlopt_lib' in self.options:
+            self.options['nlopt_lib'] = f'{self.dirname}/nlopt-2.4.2-dll64/libnlopt-0.lib'
+        
+        if not 'tasmanian_lib' in self.options:
+            self.options['tasmanian_lib'] = f'{self.dirname}/TASMANIAN-7.0/lib/tasmaniansparsegrid.lib'
 
         if not os.path.isfile(self.dllfilename) or force_compile:
             compile(self.filename,options=self.options,do_print=do_print)
