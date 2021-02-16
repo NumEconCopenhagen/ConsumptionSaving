@@ -53,7 +53,7 @@ def normal_gauss_hermite(sigma,n=7,mu=None):
 
     if sigma == 0.0 or n == 1:
 
-        w = np.zeroes(n)
+        w = np.ones(n)/n
         
         if mu is None:
             x = np.zeroes(n)
@@ -93,7 +93,7 @@ def log_normal_gauss_hermite(sigma,n=7,mu=None):
 
     if sigma == 0.0 or n == 1:
 
-        w = np.ones(n)
+        w = np.ones(n)/n
         
         if mu is None:
             x = np.exp(np.zeros(n))
