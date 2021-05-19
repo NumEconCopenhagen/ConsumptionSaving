@@ -19,7 +19,7 @@ from .cpptools import link_to_cpp
 # main
 class ModelClass():
     
-    def __init__(self,name=None,
+    def __init__(self,name='',
             load=False,from_dict=None,
             setup_infrastruct=True,**kwargs):
         """ defines default attributes """
@@ -28,7 +28,6 @@ class ModelClass():
         assert not hasattr(self,'cpp'), 'the model can not have .cpp method'
 
         # a. name
-        if name is None: raise Exception('name must be specified')
         self.name = name
 
         # list of internal of attributes (used when saving)
@@ -155,9 +154,11 @@ class ModelClass():
         for attr in self.all_attrs():
             if not attr in drop: model_dict[attr] = getattr(self,attr)
 
+        model_dict['link_to_cpp'] = not type(self.cpp) is SimpleNamespace
+
         return model_dict
 
-    def from_dict(self,model_dict,do_copy=False):
+    def from_dict(self,model_dict,do_copy=True):
         """ construct the model from a dict version of the model """
 
         self.namespaces = model_dict['namespaces']
@@ -170,6 +171,8 @@ class ModelClass():
                     setattr(self,attr,model_dict[attr])
             else:
                 setattr(self,attr,None)
+
+        if model_dict['link_to_cpp']: self.link_to_cpp(force_compile=False)
 
     def save(self,drop=[]):
         """ save the model """
