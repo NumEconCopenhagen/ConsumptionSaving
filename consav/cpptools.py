@@ -344,21 +344,9 @@ class link_to_cpp():
     # calling functions #
     #####################
     
-    def call_func(self,funcname,*args):
-        """ call function 
-        
-        Args:
+    def get_p_args(self,funcname,args):
+        """ get pointers to arguments """
 
-            funcname (str): function to call
-            *args: arguments to function
-
-        Returns
-
-            (None/int/double/bool): return of function
-
-        """
-        
-        # a. pointers to argumenters
         p_args = []
 
         argtypes_raw,_restype_raw = self.funcs[funcname]
@@ -379,11 +367,36 @@ class link_to_cpp():
 
             p_args.append(p_arg)
 
-        # b. function call
-        funcnow = getattr(self.cppfile,funcname)
+        return p_args
+
+    def call_func(self,funcname,*args):
+        """ call function 
         
-        return funcnow(*p_args)
-    
+        Args:
+
+            funcname (str): function to call
+            *args: arguments to function
+
+        Returns
+
+            (None/int/double/bool): return of function
+
+        """
+        
+        try:
+
+            p_args = self.get_p_args(funcname,args)
+            funcnow = getattr(self.cppfile,funcname)
+            return funcnow(*p_args)
+
+        except:
+
+            self.compile(force_compile=False) # re-linking might solve the problem
+
+            p_args = self.get_p_args(funcname,args)
+            funcnow = getattr(self.cppfile,funcname)
+            return funcnow(*p_args)
+
     ############
     # clean up #
     ############
