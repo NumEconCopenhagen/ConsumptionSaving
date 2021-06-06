@@ -25,6 +25,7 @@ The repository **[EconModelNotebooks](https://github.com/NumEconCopenhagen/EconM
 The package can be installed with
 
 ```
+pip install EconModel
 pip install ConSav
 ```
 
