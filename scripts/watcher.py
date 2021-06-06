@@ -10,12 +10,13 @@ class PipWatch(events.PatternMatchingEventHandler):
         subprocess.check_call(shlex.split("pip install ."))
 
 if __name__ == "__main__":
-        event_handler = PipWatch("*.py")
-        observer = observers.Observer()
-        observer.schedule(event_handler, 'consav', recursive=True)
-        observer.start()
-        try:
-            while True:
-                time.sleep(5)
-        except KeyboardInterrupt:
-            observer.stop()
+
+    event_handler = PipWatch("*.py")
+    observer = observers.Observer()
+    observer.schedule(event_handler, 'consav', recursive=True)
+    observer.start()
+    try:
+        while True:
+            time.sleep(5)
+    except KeyboardInterrupt:
+        observer.stop()
