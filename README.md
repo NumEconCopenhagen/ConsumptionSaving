@@ -14,7 +14,7 @@ The repository **[ConsumptionSavingNotebooks](https://github.com/NumEconCopenhag
 * The canonical buffer-stock consumption model
 * A durable consumption models with non-convex adjustment costs
 
-The repository **[EconModelNotebooks](https://github.com/NumEconCopenhagen/EconModelNotebooks)** contains a number of examples on using the underlying model class.
+The library builds on the model class in **[EconModel](https://github.com/NumEconCopenhagen/EconModel)**. The repository **[EconModelNotebooks](https://github.com/NumEconCopenhagen/EconModelNotebooks)** contains a number of examples on using this underlying model class.
 
 **New to Python?** Try out this online course, [Introduction to programming and numerical analysis](https://numeconcopenhagen.netlify.com/).
 
