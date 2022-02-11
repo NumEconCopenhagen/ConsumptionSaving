@@ -3,8 +3,8 @@ import setuptools
 setuptools.setup(
     name='ConSav',
     url='https://github.com/NumEconCopenhagen/ConsumptionSaving',
-    download_url='https://github.com/NumEconCopenhagen/ConsumptionSaving/archive/refs/tags/v0.1.tar.gz',
-    version='0.1',
+    download_url='https://github.com/NumEconCopenhagen/ConsumptionSaving/archive/refs/tags/v0.11.tar.gz',
+    version='0.11',
     author='Jeppe Druedahl',
     packages=setuptools.find_packages(),
 )
