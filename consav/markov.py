@@ -79,7 +79,7 @@ def tauchen(mu,rho,sigma,m=3,n=7,cutoff=None):
 ###############
 
 def rouwenhorst(mu,rho,sigma,n=7):
-    """Rouwenhorst method to discretize autoregressie process
+    """Rouwenhorst method to discretize autoregressive process
 
     Args:
 

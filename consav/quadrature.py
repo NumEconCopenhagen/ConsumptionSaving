@@ -82,7 +82,7 @@ def log_normal_gauss_hermite(sigma,n=7,mu=None):
 
         sigma (double): standard deviation
         n (int): number of points
-        mu (double,optinal): mean (if None, the mean one)
+        mu (double,optinal): mean (if None, then mean one)
 
     Returns:
 
