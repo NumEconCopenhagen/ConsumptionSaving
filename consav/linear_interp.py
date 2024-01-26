@@ -39,3 +39,4 @@ from .linear_interp_1d import *
 from .linear_interp_2d import *
 from .linear_interp_3d import *
 from .linear_interp_4d import *
+from .linear_interp_5d import *
